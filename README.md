@@ -1,6 +1,6 @@
 # CTWEBPGL Web Programming - Long Exam 1
 
-This repository contains a React frontend built with Vite, React Router, and Tailwind CSS.
+This repository contains the Bulldogs Exchange React frontend and its Express/MongoDB backend.
 
 The current project is **BulldogEx Shop**, a low-fidelity e-commerce wireframe for campus products. It includes a full-width hero banner, product catalog cards, product detail pages, store information pages, shared layouts, and authentication screens.
 
@@ -11,6 +11,8 @@ The current project is **BulldogEx Shop**, a low-fidelity e-commerce wireframe f
 - React Router DOM
 - Tailwind CSS 4
 - ESLint
+- Express
+- MongoDB with Mongoose
 
 ## Main Features
 
@@ -50,16 +52,25 @@ cd surname-long-exam
 
 ## Project Setup
 
-Install dependencies inside the client app:
+Install frontend dependencies:
 
 ```bash
-cd surname-client
+cd garzon-client
 npm install
 ```
 
-Start the development server:
+Start the frontend development server:
 
 ```bash
+npm run dev
+```
+
+In a second terminal, install and start the backend after copying
+`garzon-server/.env.example` to `garzon-server/.env`:
+
+```bash
+cd garzon-server
+npm install
 npm run dev
 ```
 
@@ -130,13 +141,17 @@ git push
 - `src/pages/LandingPages/ProductListPage.jsx` - product catalog page
 - `src/pages/LandingPages/ProductPage.jsx` - single product detail page
 - `src/pages/LandingPages/HomePage.jsx` - landing page with full-width hero banner
+- `garzon-server/models/` - Mongoose collection definitions and indexes
+- `garzon-server/controllers/` - API request handlers
+- `garzon-server/routes/` - Express collection routes
+- `docs/activity2-database-design.md` - activity tables, CRD, and screenshot checklist
 
 ## Current File Structure
 
 ```text
 long-exam1/
 ├── README.md
-└── robles-client/
+├── garzon-client/
     ├── .gitignore
     ├── eslint.config.js
     ├── index.html
@@ -177,7 +192,15 @@ long-exam1/
                 ├── AboutPage.jsx
                 ├── ProductListPage.jsx
                 ├── ProductPage.jsx
-                └── HomePage.jsx
+            └── HomePage.jsx
+└── garzon-server/
+    ├── config/
+    ├── controllers/
+    ├── middleware/
+    ├── models/
+    ├── routes/
+    ├── scripts/
+    └── index.js
 ```
 
 ## Notes

@@ -1,0 +1,24 @@
+{
+  "name": "garzon-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MongoDB and Express backend for the Bulldogs Exchange activity.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "seed": "node scripts/seedDatabase.js",
+    "validate:models": "node scripts/validateModels.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mongoose": "^9.9.2",
+    "morgan": "^1.11.0"
+  }
+}
