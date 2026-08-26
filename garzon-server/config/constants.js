@@ -1,4 +1,4 @@
-const HttpStatus = Object.freeze({
+const HttpStatus = {
   OK: 200,
   CREATED: 201,
   BAD_REQUEST: 400,
@@ -7,6 +7,6 @@ const HttpStatus = Object.freeze({
   NOT_FOUND: 404,
   CONFLICT: 409,
   INTERNAL_SERVER_ERROR: 500,
-});
+};
 
 export { HttpStatus };

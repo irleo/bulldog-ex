@@ -1,0 +1,27 @@
+## Server-side
+garzon-server/**/node_modules/
+garzon-server/**/.env
+garzon-server/**/npm-debug.log*
+garzon-server/**/scripts/
+
+## Client-side
+garzon-client/**/node_modules/
+garzon-client/**/dist/
+garzon-client/**/dist-ssr/
+garzon-client/**/logs/
+garzon-client/**/*.log
+garzon-client/**/npm-debug.log*
+garzon-client/**/yarn-debug.log*
+garzon-client/**/yarn-error.log*
+garzon-client/**/pnpm-debug.log*
+garzon-client/**/lerna-debug.log*
+garzon-client/**/*.local
+garzon-client/.vscode/*
+!garzon-client/.vscode/extensions.json
+garzon-client/**/.idea/
+garzon-client/**/.DS_Store
+garzon-client/**/*.suo
+garzon-client/**/*.ntvs*
+garzon-client/**/*.njsproj
+garzon-client/**/*.sln
+garzon-client/**/*.sw?
