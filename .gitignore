@@ -2,9 +2,14 @@
 garzon-server/**/node_modules/
 garzon-server/**/.env
 garzon-server/**/npm-debug.log*
+garzon-server/uploads/
 garzon-server/**/scripts/
+!garzon-server/scripts/
+garzon-server/scripts/*
+!garzon-server/scripts/*.js
 
 ## Client-side
+garzon-client/**/.env
 garzon-client/**/node_modules/
 garzon-client/**/dist/
 garzon-client/**/dist-ssr/

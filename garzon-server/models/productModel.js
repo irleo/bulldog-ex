@@ -47,7 +47,7 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: [120, 'Supplier name cannot exceed 120 characters.'],
-      default: undefined,
+      default: 'Bulldogs Exchange',
     },
     images: {
       type: [String],
@@ -79,6 +79,6 @@ productSchema.index({ categoryId: 1, isActive: 1, createdAt: -1 });
 productSchema.index({ categoryId: 1, supplier: 1, createdAt: -1 });
 productSchema.index({ price: 1 });
 
-const Product = mongoose.model('Product', productSchema);
+const Product = mongoose.model('Product', productSchema, 'products');
 
 export default Product;

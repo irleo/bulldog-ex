@@ -1,11 +1,15 @@
-import { HttpStatus } from '../config/constants.js';
-import Category from '../models/categoryModel.js';
-import { ApiError } from '../utils/ApiError.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
-import { escapeRegex, parsePagination } from '../utils/query.js';
+import { HttpStatus } from "../config/constants.js";
+import Category from "../models/categoryModel.js";
+import { ApiError, asyncHandler } from "../middleware/errorHandlers.js";
+import { escapeRegex, parsePagination } from "../utils/query.js";
+import { selectFields } from "../utils/selectFields.js";
+
+const categoryFields = ["name", "isActive"];
 
 export const createCategory = asyncHandler(async (request, response) => {
-  const category = await Category.create(request.body);
+  const category = await Category.create(
+    selectFields(request.body, categoryFields),
+  );
   response.status(HttpStatus.CREATED).json({ success: true, data: category });
 });
 
@@ -15,21 +19,19 @@ export const listCategories = asyncHandler(async (request, response) => {
     request.query.limit,
   );
   const filter = {
-    ...(request.query.isActive !== undefined
-      ? { isActive: request.query.isActive === 'true' }
-      : {}),
+    isActive: true,
     ...(request.query.q
       ? {
           name: {
             $regex: escapeRegex(request.query.q),
-            $options: 'i',
+            $options: "i",
           },
         }
       : {}),
   };
 
   const [categories, total] = await Promise.all([
-    Category.find(filter).sort('name').skip(skip).limit(limit),
+    Category.find(filter).sort("name").skip(skip).limit(limit),
     Category.countDocuments(filter),
   ]);
 
@@ -44,7 +46,7 @@ export const getCategory = asyncHandler(async (request, response) => {
   const category = await Category.findById(request.params.id);
 
   if (!category) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Category was not found.');
+    throw new ApiError(HttpStatus.NOT_FOUND, "Category was not found.");
   }
 
   response.status(HttpStatus.OK).json({ success: true, data: category });
@@ -53,12 +55,12 @@ export const getCategory = asyncHandler(async (request, response) => {
 export const updateCategory = asyncHandler(async (request, response) => {
   const category = await Category.findByIdAndUpdate(
     request.params.id,
-    request.body,
+    { $set: selectFields(request.body, categoryFields) },
     { new: true, runValidators: true },
   );
 
   if (!category) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Category was not found.');
+    throw new ApiError(HttpStatus.NOT_FOUND, "Category was not found.");
   }
 
   response.status(HttpStatus.OK).json({ success: true, data: category });
@@ -68,7 +70,7 @@ export const deleteCategory = asyncHandler(async (request, response) => {
   const category = await Category.findByIdAndDelete(request.params.id);
 
   if (!category) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Category was not found.');
+    throw new ApiError(HttpStatus.NOT_FOUND, "Category was not found.");
   }
 
   response.status(HttpStatus.OK).json({

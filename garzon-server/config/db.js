@@ -1,9 +1,9 @@
-import mongoose from 'mongoose';
-import { MONGO_URI } from './config.js';
+import mongoose from "mongoose";
+import { MONGO_URI } from "./config.js";
 
 const connectDB = async () => {
   try {
-    mongoose.set('strictQuery', true);
+    mongoose.set("strictQuery", true);
     const connection = await mongoose.connect(MONGO_URI, {
       serverSelectionTimeoutMS: 10000,
     });

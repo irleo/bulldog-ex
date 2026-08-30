@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
+import { OrderStatus } from '../config/constants.js';
 
 const shippingAddressSchema = new mongoose.Schema(
   {
@@ -82,8 +83,8 @@ const orderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],
-      default: 'pending',
+      enum: Object.values(OrderStatus),
+      default: OrderStatus.PENDING,
     },
     paymentStatus: {
       type: String,
@@ -127,6 +128,6 @@ orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ paymentStatus: 1, createdAt: -1 });
 
-const Order = mongoose.model('Order', orderSchema);
+const Order = mongoose.model('Order', orderSchema, 'orders');
 
 export default Order;

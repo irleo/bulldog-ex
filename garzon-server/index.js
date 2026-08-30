@@ -1,10 +1,12 @@
 import cors from 'cors';
 import express from 'express';
 import morgan from 'morgan';
+import { fileURLToPath } from 'node:url';
 import { CLIENT_ORIGIN, NODE_ENV, PORT } from './config/config.js';
 import { HttpStatus } from './config/constants.js';
 import connectDB from './config/db.js';
-import { errorHandler, notFound } from './middleware/errorMiddleware.js';
+import { notFoundHandler, serverErrorHandler } from './middleware/errorHandlers.js';
+import authRoutes from './routes/authRoutes.js';
 import cartRoutes from './routes/cartRoutes.js';
 import categoryRoutes from './routes/categoryRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
@@ -31,6 +33,14 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(
+  '/uploads',
+  express.static(fileURLToPath(new URL('./uploads/', import.meta.url)), {
+    dotfiles: 'deny',
+    index: false,
+    maxAge: NODE_ENV === 'production' ? '7d' : 0,
+  }),
+);
 
 // Health Check
 app.get('/api/v1/health', (_request, response) => {
@@ -43,6 +53,7 @@ app.get('/api/v1/health', (_request, response) => {
 });
 
 // API V1
+app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/carts', cartRoutes);
@@ -51,8 +62,8 @@ app.use('/api/v1/reviews', reviewRoutes);
 app.use('/api/v1/users', userRoutes);
 
 // Error Handling
-app.use(notFound);
-app.use(errorHandler);
+app.use(notFoundHandler);
+app.use(serverErrorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}.`);

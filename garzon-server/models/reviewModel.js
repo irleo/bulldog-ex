@@ -29,7 +29,8 @@ const reviewSchema = new mongoose.Schema(
       minlength: [10, 'Review content must contain at least 10 characters.'],
       maxlength: [1_000, 'Review content cannot exceed 1000 characters.'],
     },
-    isApproved: { type: Boolean, default: false },
+    isFlagged: { type: Boolean, default: false },
+    isHidden: { type: Boolean, default: false },
   },
   {
     timestamps: true,
@@ -40,8 +41,9 @@ const reviewSchema = new mongoose.Schema(
 
 reviewSchema.index({ productId: 1, userId: 1 }, { unique: true });
 reviewSchema.index({ productId: 1, rating: -1 });
-reviewSchema.index({ isApproved: 1, createdAt: -1 });
+reviewSchema.index({ isHidden: 1, createdAt: -1 });
+reviewSchema.index({ isFlagged: 1, createdAt: -1 });
 
-const Review = mongoose.model('Review', reviewSchema);
+const Review = mongoose.model('Review', reviewSchema, 'reviews');
 
 export default Review;

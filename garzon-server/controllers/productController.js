@@ -1,26 +1,25 @@
-import mongoose from 'mongoose';
-import { HttpStatus } from '../config/constants.js';
-import Category from '../models/categoryModel.js';
-import Product from '../models/productModel.js';
-import { ApiError } from '../utils/ApiError.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
+import mongoose from "mongoose";
+import { HttpStatus, UserRole } from "../config/constants.js";
+import Category from "../models/categoryModel.js";
+import Product from "../models/productModel.js";
+import { ApiError, asyncHandler } from "../middleware/errorHandlers.js";
 import {
   escapeRegex,
   parseOptionalBoolean,
   parseOptionalNonNegativeNumber,
   parsePagination,
-} from '../utils/query.js';
+} from "../utils/query.js";
 
-const categoryPopulation = { path: 'categoryId', select: 'name slug' };
+const categoryPopulation = { path: "categoryId", select: "name slug" };
 const productFields = [
-  'name',
-  'sku',
-  'price',
-  'stock',
-  'categoryId',
-  'supplier',
-  'images',
-  'isActive',
+  "name",
+  "sku",
+  "price",
+  "stock",
+  "categoryId",
+  "supplier",
+  "images",
+  "isActive",
 ];
 
 /** @param {Record<string, unknown>} source */
@@ -33,15 +32,15 @@ const selectProductFields = (source) =>
 
 /** @param {unknown} rawSort */
 const parseProductSort = (rawSort) => {
-  const requested = String(rawSort ?? '-createdAt');
-  const descending = requested.startsWith('-');
+  const requested = String(rawSort ?? "-createdAt");
+  const descending = requested.startsWith("-");
   const field = descending ? requested.slice(1) : requested;
-  const allowedFields = new Set(['name', 'price', 'stock', 'createdAt']);
+  const allowedFields = new Set(["name", "price", "stock", "createdAt"]);
 
   if (!allowedFields.has(field)) {
     throw new ApiError(
       HttpStatus.BAD_REQUEST,
-      'sort must be name, price, stock, createdAt, or the descending form prefixed with -.',
+      "sort must be name, price, stock, createdAt, or the descending form prefixed with -.",
     );
   }
 
@@ -54,7 +53,7 @@ const resolveCategoryId = async (rawCategory) => {
 
   const category = String(rawCategory).trim();
   if (!category) {
-    throw new ApiError(HttpStatus.BAD_REQUEST, 'category cannot be empty.');
+    throw new ApiError(HttpStatus.BAD_REQUEST, "category cannot be empty.");
   }
 
   if (mongoose.isObjectIdOrHexString(category)) return category;
@@ -62,22 +61,26 @@ const resolveCategoryId = async (rawCategory) => {
   const pattern = `^${escapeRegex(category)}$`;
   const match = await Category.findOne({
     $or: [
-      { name: { $regex: pattern, $options: 'i' } },
-      { slug: { $regex: pattern, $options: 'i' } },
+      { name: { $regex: pattern, $options: "i" } },
+      { slug: { $regex: pattern, $options: "i" } },
     ],
   })
-    .select('_id')
+    .select("_id")
     .lean();
 
   return match?._id ?? null;
 };
 
 export const createProduct = asyncHandler(async (request, response) => {
-  const product = await Product.create(selectProductFields(request.body));
+  const productData = selectProductFields(request.body);
+  if (request.file) {
+    productData.images = [`/uploads/products/${request.file.filename}`];
+  }
+  const product = await Product.create(productData);
   await product.populate(categoryPopulation);
   response.status(HttpStatus.CREATED).json({
     success: true,
-    message: 'Product created successfully.',
+    message: "Product created successfully.",
     count: 1,
     data: product,
   });
@@ -91,23 +94,26 @@ export const listProducts = asyncHandler(async (request, response) => {
   const categoryId = await resolveCategoryId(
     request.query.category ?? request.query.categoryId,
   );
-  const isActive = parseOptionalBoolean(request.query.isActive, 'isActive');
+  const isActive = parseOptionalBoolean(request.query.isActive, "isActive");
   const minPrice = parseOptionalNonNegativeNumber(
     request.query.minPrice,
-    'minPrice',
+    "minPrice",
   );
   const maxPrice = parseOptionalNonNegativeNumber(
     request.query.maxPrice,
-    'maxPrice',
+    "maxPrice",
   );
-  const filter = {};
+  const filter = { isActive: true };
 
   if (categoryId !== undefined) filter.categoryId = categoryId;
-  if (isActive !== undefined) filter.isActive = isActive;
+  if (request.user?.role === UserRole.ADMIN) {
+    if (isActive === undefined) delete filter.isActive;
+    else filter.isActive = isActive;
+  }
   if (request.query.supplier) {
     filter.supplier = {
       $regex: `^${escapeRegex(request.query.supplier)}$`,
-      $options: 'i',
+      $options: "i",
     };
   }
 
@@ -115,9 +121,9 @@ export const listProducts = asyncHandler(async (request, response) => {
   if (search) {
     const pattern = escapeRegex(search);
     filter.$or = [
-      { name: { $regex: pattern, $options: 'i' } },
-      { sku: { $regex: pattern, $options: 'i' } },
-      { supplier: { $regex: pattern, $options: 'i' } },
+      { name: { $regex: pattern, $options: "i" } },
+      { sku: { $regex: pattern, $options: "i" } },
+      { supplier: { $regex: pattern, $options: "i" } },
     ];
   }
   if (minPrice !== undefined || maxPrice !== undefined) {
@@ -130,14 +136,19 @@ export const listProducts = asyncHandler(async (request, response) => {
   if (minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice) {
     throw new ApiError(
       HttpStatus.BAD_REQUEST,
-      'minPrice cannot be greater than maxPrice.',
+      "minPrice cannot be greater than maxPrice.",
     );
   }
+  const requestedSort = parseProductSort(request.query.sort);
+  const productSort =
+    request.user?.role === UserRole.ADMIN && isActive === undefined
+      ? { isActive: -1, ...requestedSort }
+      : requestedSort;
 
   const [products, total] = await Promise.all([
     Product.find(filter)
       .populate(categoryPopulation)
-      .sort(parseProductSort(request.query.sort))
+      .sort(productSort)
       .skip(skip)
       .limit(limit)
       .lean(),
@@ -146,7 +157,7 @@ export const listProducts = asyncHandler(async (request, response) => {
 
   response.status(HttpStatus.OK).json({
     success: true,
-    message: 'Products retrieved successfully.',
+    message: "Products retrieved successfully.",
     count: products.length,
     data: products,
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
@@ -154,36 +165,64 @@ export const listProducts = asyncHandler(async (request, response) => {
 });
 
 export const getProduct = asyncHandler(async (request, response) => {
-  const product = await Product.findById(request.params.id).populate(
-    categoryPopulation,
-  );
+  const product = await Product.findOne({
+    _id: request.params.id,
+    isActive: true,
+  }).populate(categoryPopulation);
 
   if (!product) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Product was not found.');
+    throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
   }
 
   response.status(HttpStatus.OK).json({
     success: true,
-    message: 'Product retrieved successfully.',
+    message: "Product retrieved successfully.",
     count: 1,
     data: product,
   });
 });
 
 export const updateProduct = asyncHandler(async (request, response) => {
+  const productUpdates = selectProductFields(request.body);
+  if (request.file) {
+    productUpdates.images = [`/uploads/products/${request.file.filename}`];
+  }
   const product = await Product.findByIdAndUpdate(
     request.params.id,
-    selectProductFields(request.body),
+    productUpdates,
     { new: true, runValidators: true },
   ).populate(categoryPopulation);
 
   if (!product) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Product was not found.');
+    throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
   }
 
   response.status(HttpStatus.OK).json({
     success: true,
-    message: 'Product updated successfully.',
+    message: "Product updated successfully.",
+    count: 1,
+    data: product,
+  });
+});
+
+export const setProductStatus = asyncHandler(async (request, response) => {
+  if (typeof request.body.isActive !== "boolean") {
+    throw new ApiError(HttpStatus.BAD_REQUEST, "isActive must be a boolean.");
+  }
+
+  const product = await Product.findByIdAndUpdate(
+    request.params.id,
+    { $set: { isActive: request.body.isActive } },
+    { new: true, runValidators: true },
+  ).populate(categoryPopulation);
+
+  if (!product) {
+    throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
+  }
+
+  response.status(HttpStatus.OK).json({
+    success: true,
+    message: `Product ${product.isActive ? "activated" : "deactivated"} successfully.`,
     count: 1,
     data: product,
   });
@@ -193,12 +232,12 @@ export const deleteProduct = asyncHandler(async (request, response) => {
   const product = await Product.findByIdAndDelete(request.params.id);
 
   if (!product) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Product was not found.');
+    throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
   }
 
   response.status(HttpStatus.OK).json({
     success: true,
-    message: 'Product deleted successfully.',
+    message: "Product deleted successfully.",
     count: 1,
     data: { id: product.id, deleted: true },
   });

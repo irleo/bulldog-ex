@@ -1,12 +1,13 @@
-import mongoose from 'mongoose';
-import { HttpStatus } from '../config/constants.js';
-import { ApiError } from '../utils/ApiError.js';
+import mongoose from "mongoose";
+import { HttpStatus } from "../config/constants.js";
+import { ApiError } from "./errorHandlers.js";
 
 /**
  * @param {string} [parameterName]
  * @returns {import('express').RequestHandler}
  */
-export const validateObjectId = (parameterName = 'id') =>
+export const validateObjectId =
+  (parameterName = "id") =>
   (request, _response, next) => {
     const value = request.params[parameterName];
 

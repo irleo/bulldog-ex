@@ -1,57 +1,45 @@
 # Bulldogs Exchange API
 
-Express and MongoDB backend for Laboratory Activity 2. The API implements the
-Product, Category, Cart, Order, Review, and User collections using Mongoose.
+Express and MongoDB API for the Bulldogs Exchange store. Authentication uses
+hashed passwords and signed JWT access tokens. Authorization is enforced by the
+server; frontend route guards are not treated as a security boundary.
 
 ## Setup
 
-1. Copy `.env.example` to `.env`.
-2. Set `MONGO_URI` (or `MONGODB_URI`) to a local MongoDB or Atlas connection.
-3. Start the API with `npm run dev`.
-4. Verify `GET http://localhost:5000/api/v1/health`.
+1. Copy `.env.example` to `.env` and replace `JWT_SECRET`.
+2. Configure `MONGO_URI` for local MongoDB or MongoDB Atlas.
+3. Install dependencies with `npm install`.
+4. Start the API with `npm run dev`.
+5. Verify `GET http://localhost:5000/api/v1/health`.
 
-The database seed will not overwrite existing documents. Run it only against an
-empty activity database:
+Public registration creates customer accounts only. Administrator accounts are
+not created by public registration or by the catalog seed.
 
-```bash
-npm run seed
-```
+Run `npm run seed` to upsert the categories and eight products represented by
+the local assets in `garzon-client/public/products`. The command does not create,
+update, or remove accounts, carts, orders, or reviews.
 
-The optional model-validation script demonstrates required-field, range,
-format, relationship, and custom validation behavior without connecting to a
-database:
+## Access model
 
-```bash
-npm run validate:models
-```
+| Resource | Public | Customer | Admin |
+| --- | --- | --- | --- |
+| Products | Search and view active products | Search and view | Create, edit, activate/deactivate |
+| Reviews | View visible reviews | Create reviews after claiming an order | View, flag, and hide reviews |
+| Cart | - | Manage own cart | - |
+| Orders | - | Create and view own orders | View all and update status |
+| Profile | - | View/edit own profile and password | View/edit own profile and password |
+| Users | - | - | View, edit, activate/deactivate |
 
-## Endpoints
+Every protected request sends `Authorization: Bearer <token>`. Authentication
+also checks the database on every request, so deactivated accounts immediately
+lose access even when they still hold an unexpired token.
 
-All collection routes implement `GET /`, `POST /`, `GET /:id`, `PATCH /:id`,
-and `DELETE /:id`.
+## Primary endpoints
 
-| Collection | Base endpoint | Useful filters |
-| --- | --- | --- |
-| Categories | `/api/v1/categories` | `q`, `isActive` |
-| Products | `/api/v1/products` | `q`, `categoryId`, `minPrice`, `maxPrice`, `isActive` |
-| Carts | `/api/v1/carts` | `userId` |
-| Orders | `/api/v1/orders` | `userId`, `status`, `paymentStatus` |
-| Reviews | `/api/v1/reviews` | `productId`, `userId`, `rating`, `isApproved` |
-| Users | `/api/v1/users` | `q`, `role`, `isActive` |
-
-List endpoints accept `page` and `limit`; `limit` is capped at 100. API errors
-use a consistent JSON structure, and unknown schema fields are rejected.
-
-## Main structure
-
-```text
-garzon-server/
-|-- config/          # ES module environment, constants, and MongoDB connection
-|-- controllers/     # CRUD behavior and collection-specific filtering
-|-- middleware/      # ObjectId, 404, and error handling
-|-- models/          # Six Mongoose schemas, validation, and indexes
-|-- routes/          # Express routers for every collection
-|-- scripts/         # Safe sample seed and validation demonstrations
-|-- utils/           # Typed controller/error/query helpers
-`-- index.js         # Express setup, routes, database startup, and HTTP server
-```
+- `/api/v1/auth/register`, `/login`, `/logout`, `/me`
+- `/api/v1/products` and admin `/api/v1/products/admin`
+- `/api/v1/categories`
+- `/api/v1/carts`
+- `/api/v1/orders` and customer `/api/v1/orders/mine`
+- `/api/v1/reviews` and admin `/api/v1/reviews/admin`
+- `/api/v1/users/me` and admin `/api/v1/users`

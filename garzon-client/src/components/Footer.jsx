@@ -1,74 +1,68 @@
 import { Link } from "react-router-dom";
-import bulldoglogo from "../assets/img/NU-Bulldogs-Logo.png";
+import { useAuth } from "../auth/authContext.js";
 
 const Footer = () => {
-  return (
-    <footer className="relative overflow-hidden border-t-2 border-primary bg-primary px-4 pb-16">
-      {/* Background logo */}
-      <img
-        src={bulldoglogo}
-        alt=""
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-1/2 w-[28rem] -translate-y-1/2 opacity-[0.06]"
-      />
+  const { user } = useAuth();
+  const isCustomer = user?.role === "customer";
+  const accountLinks = isCustomer
+    ? [
+        ["Cart", "/cart"],
+        ["Orders", "/orders"],
+        ["Profile", "/profile"],
+      ]
+    : [
+        ["Sign in", "/auth/signin"],
+        ["Create account", "/auth/signup"],
+      ];
 
-      <div className="relative mx-auto max-w-6xl">
-        {/* Main grid */}
-        <div className="grid gap-10 lg:grid-cols-[1.4fr_auto] lg:items-start">
-          {/* Left: Brand */}
-          <div className="max-w-md">
-            <p className="text-2xl font-bold text-white">BulldogEx Shop</p>
-            <p className="mt-3 text-sm leading-relaxed text-[var(--color-primary-soft)]">
-              Campus essentials, simple ordering, and easy access to store pages
-              for students and staff.
+  return (
+    <footer className="mt-4 bg-[#0b1b46] text-white">
+      <div className="flex w-full flex-col gap-10 px-6 py-12 sm:px-8 md:flex-row md:items-start md:justify-between lg:px-14 xl:px-24">
+        <div className="max-w-md">
+          <div className="flex items-center gap-3">
+            <p className="font-display text-2xl font-extrabold">
+              BulldogEx Shop
             </p>
           </div>
-
-          {/* Right: Link groups */}
-          <div className="grid grid-cols-2 gap-x-16 gap-y-6 justify-self-end">
-            <nav aria-label="Main footer navigation">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--color-primary-soft)]">
-                Explore
-              </p>
-              <ul className="flex flex-col gap-3 text-sm">
-                <li>
-                  <Link to="/products" className="footer-link">
-                    Products
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/cart" className="footer-link">
-                    Cart
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/pickup" className="footer-link">
-                    Pickup
-                  </Link>
-                </li>
-              </ul>
-            </nav>
-
-            <nav aria-label="Authentication">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--color-primary-soft)]">
-                Account
-              </p>
-              <ul className="flex flex-col gap-3 text-sm">
-                <li>
-                  <Link to="/profile" className="footer-link">
-                    Profile
-                  </Link>
-                </li>
-              </ul>
-            </nav>
-          </div>
-        </div>
-
-        {/* Bottom bar */}
-        <div className="mt-10 border-t border-[var(--color-primary-soft)]/30 pt-4">
-          <p className="text-xs text-[var(--color-primary-soft)]">
-            © {new Date().getFullYear()} BulldogEx Shop. All rights reserved.
+          <p className="mt-3 text-sm leading-relaxed text-[#a9b4d6]">
+            Campus essentials, simple ordering, and easy access to store pages
+            for students and staff.
           </p>
+        </div>
+        <div className="grid grid-cols-2 gap-x-16 gap-y-8 sm:gap-x-24 md:shrink-0">
+          <nav aria-label="Explore">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#d4af37]">
+              Explore
+            </p>
+            <div className="flex flex-col items-start gap-2 text-sm text-[#c7d1ea]">
+              <Link to="/" className="hover:text-white">
+                Home
+              </Link>
+              <Link to="/about" className="hover:text-white">
+                About
+              </Link>
+              <Link to="/products" className="hover:text-white">
+                Products
+              </Link>
+            </div>
+          </nav>
+          <nav aria-label="Account">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#d4af37]">
+              Account
+            </p>
+            <div className="flex flex-col items-start gap-2 text-sm text-[#c7d1ea]">
+              {accountLinks.map(([label, to]) => (
+                <Link key={to} to={to} className="hover:text-white">
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        </div>
+      </div>
+      <div className="border-t border-white/10">
+        <div className="w-full px-6 py-4 text-xs text-[#7c88ad] sm:px-8 lg:px-14 xl:px-24">
+          © {new Date().getFullYear()} BulldogEx Shop. All rights reserved.
         </div>
       </div>
     </footer>

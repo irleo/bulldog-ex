@@ -1,72 +1,103 @@
-import { NavLink } from 'react-router-dom';
-import logo from '../assets/img/nubdexchange_logo.png';
+import { NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/authContext.js";
+import { StoreIcon } from "./StoreUI.jsx";
 
-const links = [
-  { label: 'Home', to: '/' },
-  { label: 'About', to: '/about' },
-  { label: 'Products', to: '/products' },
+const guestLinks = [
+  ["Home", "/"],
+  ["About", "/about"],
+  ["Products", "/products"],
 ];
-
-const authLinks = [
-  { label: 'Sign in', to: '/auth/signin' },
-  { label: 'Sign up', to: '/auth/signup' },
+const customerLinks = [
+  ["Home", "/"],
+  ["About", "/about"],
+  ["Products", "/products"],
+  ["Orders", "/orders"],
+  ["Profile", "/profile"],
 ];
 
 const navLinkClassName = ({ isActive }) =>
-  [
-    'border-2 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition',
-    isActive
-      ? 'border-primary bg-accent-soft text-base'
-      : 'border-transparent text-soft hover:border-zinc-900 hover:bg-zinc-50 hover:text-zinc-900',
-  ].join(' ');
-
-const authLinkClassName = ({ isActive }) =>
-  [
-    'border-b-2 px-4 py-2 ms-3 text-[11px] font-semibold uppercase tracking-[0.24em] transition ',
-    isActive
-      ? 'bg-primary text-white shadow-sm '
-      : 'text-primary hover:bg-zinc-50 hover:text-zinc-900',
-  ].join(' ');
+  `rounded-full px-3.5 py-2 text-[13px] font-semibold transition ${isActive ? "bg-[#0b1b46] text-white" : "text-[#101828] hover:bg-[#eef1f8]"}`;
 
 const NavBar = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const isCustomer = user?.role === "customer";
+  const links = isCustomer ? customerLinks : guestLinks;
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/");
+    } catch (error) {
+      console.error("Unable to log out:", error);
+    }
+  };
+
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b-2 border-accent bg-accent backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-4 sm:px-6 lg:px-8">
-        <NavLink to="/" className="flex items-center gap-3">
-          <img
-            src={logo}
-            alt="BulldogEx"
-            className="h-9 w-9 rounded-full border-2 border-zinc-900 bg-zinc-50 object-contain"
-          />
-          <div className="space-y-0.5">
-            <h1 className="text-xl font-bold text-default">BulldogEx Shop</h1>
+    <header className="sticky top-0 z-50 border-b border-[#e3e7f0] bg-white">
+      <div className="h-[3px] bg-[#d4af37]" />
+      <div className="flex h-16 w-full items-center justify-between gap-3 px-4 sm:px-8 lg:px-10 xl:px-14">
+        <NavLink
+          to={isCustomer ? "/products" : "/"}
+          className="flex shrink-0 items-center gap-2"
+        >
+          <div
+            className="font-display flex h-8 w-8 items-center justify-center rounded-full bg-[#0b1b46] text-xs font-extrabold text-[#d4af37]"
+            aria-hidden="true"
+          >
+            NU
           </div>
+          <span className="font-display hidden text-[15px] font-extrabold text-[#0b1b46] sm:block">
+            BulldogEx Shop
+          </span>
         </NavLink>
 
-        <nav className="hidden items-center gap-2 md:flex">
-          {links.map((link) => (
+        <nav
+          className="hidden items-center gap-1 md:flex"
+          aria-label="Store navigation"
+        >
+          {links.map(([label, to]) => (
             <NavLink
-              key={link.to}
-              to={link.to}
-              end={link.to === '/'}
+              key={to}
+              to={to}
+              end={to === "/"}
               className={navLinkClassName}
             >
-              {link.label}
-            </NavLink>
-          ))}
-
-          <div className="mx-3 h-8 w-[2px] bg-primary" />
-
-          {authLinks.map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              className={authLinkClassName}
-            >
-              {link.label}
+              {label}
             </NavLink>
           ))}
         </nav>
+
+        <div className="flex items-center gap-3">
+          {isCustomer && (
+            <NavLink
+              to="/cart"
+              className={({ isActive }) =>
+                `relative grid h-10 w-10 place-items-center rounded-full ${isActive ? "bg-[#d4af37] text-[#071230]" : "bg-[#eef1f8] text-[#0b1b46]"}`
+              }
+              aria-label="Cart"
+            >
+            
+                <StoreIcon name="cart" className="h-5 w-5" /> 
+    
+            </NavLink>
+          )}
+          {user ? (
+            <button
+              onClick={handleLogout}
+              className="rounded-lg border border-[#e3e7f0] px-3 py-2 text-xs font-semibold text-[#0b1b46] transition hover:bg-[#eef1f8]"
+            >
+              Log out
+            </button>
+          ) : (
+            <NavLink
+              to="/auth/signin"
+              className="rounded-lg bg-[#0b1b46] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#071230]"
+            >
+              Sign in
+            </NavLink>
+          )}
+        </div>
       </div>
     </header>
   );

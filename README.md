@@ -16,12 +16,12 @@ The current project is **BulldogEx Shop**, a low-fidelity e-commerce wireframe f
 
 ## Main Features
 
-- Full-width e-commerce hero section with background image overlay
-- Product listing page with reusable product cards
-- Product detail page with price, category, stock, description, and action buttons
-- Store-focused home, about, footer, and not found pages
-- Authentication pages for sign in and sign up
-- Shared layout, navbar, footer, and button components
+- JWT registration, login, logout, protected routes, and active-session checks
+- Customer product search/category filtering, cart, pickup orders, reviews, and profile management
+- Admin product, order, review, and user-management console
+- Backend-enforced role and ownership authorization
+- Pickup order progression from pending through ready for claiming
+- Consistent validation and API error responses
 
 ## Fork and Clone Instructions
 
@@ -129,13 +129,21 @@ git push
 - `/` - Home page
 - `/about` - About page
 - `/products` - Product list page
-- `/products/:name` - Single product page
+- `/products/:id` - API-driven product detail and reviews
 - `/auth/signin` - Sign in page
 - `/auth/signup` - Sign up page
+- `/profile` - Authenticated profile and password management
+- `/cart` - Customer cart
+- `/orders` - Customer order tracking
+- `/admin/products` - Admin product management
+- `/admin/orders` - Admin order processing
+- `/admin/reviews` - Admin review moderation
+- `/admin/users` - Admin account management
 
 ## Key Files
 
-- `src/assets/product-content.js` - product data used by the catalog and product pages
+- `src/api/apiClient.js` - authenticated backend API client
+- `src/auth/` - session context and route guards
 - `src/components/ProductCard.jsx` - reusable product card component
 - `src/components/ProductList.jsx` - product grid component
 - `src/pages/LandingPages/ProductListPage.jsx` - product catalog page
@@ -207,7 +215,8 @@ long-exam1/
 
 - `node_modules/` and `dist/` are not included in the structure above because they are generated folders.
 - The application uses `Layout.jsx` for public pages and `AuthLayout.jsx` for authentication pages.
-- Product routes use the product `name` value from `product-content.js` as the URL slug.
+- Product and category data are loaded from the backend rather than mock content.
+- Public registration always creates a customer. Create the first admin with the backend `npm run create:admin` command after configuring its environment variables.
 
 ## Enhancement Instructions
 - Enhancement 1: Develop an original product catalog with appropriate product names, descriptions, prices, categories, and images.

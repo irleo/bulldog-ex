@@ -1,75 +1,134 @@
-import { HttpStatus } from '../config/constants.js';
-import Cart from '../models/cartModel.js';
-import { ApiError } from '../utils/ApiError.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
-import { parsePagination } from '../utils/query.js';
+import mongoose from "mongoose";
+import { HttpStatus } from "../config/constants.js";
+import Cart from "../models/cartModel.js";
+import Product from "../models/productModel.js";
+import { ApiError, asyncHandler } from "../middleware/errorHandlers.js";
 
-const cartPopulation = [
-  { path: 'userId', select: 'firstName lastName email' },
-  { path: 'items.productId', select: 'name sku price stock' },
-];
+const cartPopulation = {
+  path: "items.productId",
+  select: "name slug sku price stock images supplier isActive",
+};
 
-export const createCart = asyncHandler(async (request, response) => {
-  const cart = await Cart.create(request.body);
-  await cart.populate(cartPopulation);
-  response.status(HttpStatus.CREATED).json({ success: true, data: cart });
+const parseQuantity = (value) => {
+  const quantity = Number(value);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+    throw new ApiError(
+      HttpStatus.BAD_REQUEST,
+      "quantity must be an integer between 1 and 100.",
+    );
+  }
+  return quantity;
+};
+
+const requireAvailableProduct = async (productId, quantity) => {
+  if (!mongoose.isObjectIdOrHexString(productId)) {
+    throw new ApiError(HttpStatus.BAD_REQUEST, "productId is invalid.");
+  }
+  const product = await Product.findOne({
+    _id: productId,
+    isActive: true,
+  }).lean();
+  if (!product) {
+    throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
+  }
+  if (product.stock < quantity) {
+    throw new ApiError(
+      HttpStatus.CONFLICT,
+      `Only ${product.stock} item(s) are available.`,
+    );
+  }
+  return product;
+};
+
+const loadCart = (userId) =>
+  Cart.findOneAndUpdate(
+    { userId },
+    { $setOnInsert: { userId, items: [] } },
+    { new: true, upsert: true, runValidators: true },
+  ).populate(cartPopulation);
+
+export const getMyCart = asyncHandler(async (request, response) => {
+  const cart = await loadCart(request.user._id);
+  response.status(HttpStatus.OK).json({ success: true, data: cart });
 });
 
-export const listCarts = asyncHandler(async (request, response) => {
-  const { page, limit, skip } = parsePagination(
-    request.query.page,
-    request.query.limit,
+export const addCartItem = asyncHandler(async (request, response) => {
+  const productId = String(request.body.productId ?? "");
+  const quantity = parseQuantity(request.body.quantity ?? 1);
+  await requireAvailableProduct(productId, quantity);
+
+  let cart = await Cart.findOne({ userId: request.user._id });
+  if (!cart) cart = new Cart({ userId: request.user._id, items: [] });
+
+  const existingItem = cart.items.find(
+    (item) => String(item.productId) === productId,
   );
-  const filter = request.query.userId ? { userId: request.query.userId } : {};
+  if (existingItem) {
+    const nextQuantity = existingItem.quantity + quantity;
+    await requireAvailableProduct(productId, nextQuantity);
+    existingItem.quantity = nextQuantity;
+  } else {
+    cart.items.push({ productId, quantity });
+  }
 
-  const [carts, total] = await Promise.all([
-    Cart.find(filter)
-      .populate(cartPopulation)
-      .sort('-createdAt')
-      .skip(skip)
-      .limit(limit),
-    Cart.countDocuments(filter),
-  ]);
-
+  await cart.save();
+  await cart.populate(cartPopulation);
   response.status(HttpStatus.OK).json({
     success: true,
-    data: carts,
-    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    message: "Product added to cart.",
+    data: cart,
   });
 });
 
-export const getCart = asyncHandler(async (request, response) => {
-  const cart = await Cart.findById(request.params.id).populate(cartPopulation);
+export const updateCartItem = asyncHandler(async (request, response) => {
+  const quantity = parseQuantity(request.body.quantity);
+  await requireAvailableProduct(request.params.productId, quantity);
 
-  if (!cart) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Cart was not found.');
+  const cart = await Cart.findOne({ userId: request.user._id });
+  const item = cart?.items.find(
+    (entry) => String(entry.productId) === request.params.productId,
+  );
+  if (!cart || !item) {
+    throw new ApiError(HttpStatus.NOT_FOUND, "Cart item was not found.");
   }
 
-  response.status(HttpStatus.OK).json({ success: true, data: cart });
+  item.quantity = quantity;
+  await cart.save();
+  await cart.populate(cartPopulation);
+  response.status(HttpStatus.OK).json({
+    success: true,
+    message: "Cart quantity updated.",
+    data: cart,
+  });
 });
 
-export const updateCart = asyncHandler(async (request, response) => {
-  const cart = await Cart.findByIdAndUpdate(request.params.id, request.body, {
-    new: true,
-    runValidators: true,
-  }).populate(cartPopulation);
+export const removeCartItem = asyncHandler(async (request, response) => {
+  const cart = await Cart.findOneAndUpdate(
+    { userId: request.user._id, "items.productId": request.params.productId },
+    { $pull: { items: { productId: request.params.productId } } },
+    { new: true, runValidators: true },
+  ).populate(cartPopulation);
 
   if (!cart) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Cart was not found.');
+    throw new ApiError(HttpStatus.NOT_FOUND, "Cart item was not found.");
   }
-
-  response.status(HttpStatus.OK).json({ success: true, data: cart });
+  response.status(HttpStatus.OK).json({
+    success: true,
+    message: "Product removed from cart.",
+    data: cart,
+  });
 });
 
-export const deleteCart = asyncHandler(async (request, response) => {
-  const cart = await Cart.findByIdAndDelete(request.params.id);
-
-  if (!cart) {
-    throw new ApiError(HttpStatus.NOT_FOUND, 'Cart was not found.');
-  }
+export const clearMyCart = asyncHandler(async (request, response) => {
+  const cart = await Cart.findOneAndUpdate(
+    { userId: request.user._id },
+    { $set: { items: [] } },
+    { new: true, upsert: true, runValidators: true },
+  ).populate(cartPopulation);
 
   response.status(HttpStatus.OK).json({
     success: true,
-    data: { id: cart.id, deleted: true },
+    message: "Cart cleared.",
+    data: cart,
   });
 });

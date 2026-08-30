@@ -1,4 +1,6 @@
+import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
+import { UserRole } from '../config/constants.js';
 
 const addressSchema = new mongoose.Schema(
   {
@@ -43,10 +45,10 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ['customer', 'admin'],
+        values: Object.values(UserRole),
         message: 'Role must be customer or admin.',
       },
-      default: 'customer',
+      default: UserRole.CUSTOMER,
     },
     phone: {
       type: String,
@@ -69,10 +71,22 @@ userSchema.virtual('fullName').get(function getFullName() {
   return `${this.firstName} ${this.lastName}`;
 });
 
+userSchema.pre('validate', async function hashPassword() {
+  if (
+    !this.isModified('passwordHash') ||
+    /^\$2[aby]\$/.test(this.passwordHash)
+  ) return;
+  this.passwordHash = await bcrypt.hash(this.passwordHash, 12);
+});
+
+userSchema.methods.matchesPassword = function matchesPassword(password) {
+  return bcrypt.compare(password, this.passwordHash);
+};
+
 userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ lastName: 1, firstName: 1 });
 userSchema.index({ role: 1, isActive: 1 });
 
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema, 'users');
 
 export default User;

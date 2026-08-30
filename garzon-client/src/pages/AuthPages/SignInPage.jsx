@@ -1,80 +1,126 @@
-import { Link } from 'react-router-dom';
-import Button from '../../components/Button';
-
+import { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../auth/authContext.js";
+import { PasswordInput } from "../../components/StoreUI.jsx";
 
 const inputClasses =
-  'mt-2 w-full rounded-xl border border-zinc-300 bg-zinc-100 px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-900 focus:bg-zinc-50';
-
-const actionButtonClassName = 'w-full rounded-xl py-3 text-[11px] tracking-[0.2em]';
+  "w-full rounded-xl border border-slate-200 bg-[#f8faff] px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[var(--color-primary-soft)]/60";
 
 const SignInPage = () => {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+    const form = new FormData(event.currentTarget);
+
+    try {
+      const user = await login(
+        { email: form.get("email"), password: form.get("password") },
+        form.get("remember") === "on",
+      );
+      const fallback = user.role === "admin" ? "/admin/products" : "/products";
+      navigate(location.state?.from?.pathname ?? fallback, { replace: true });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <>
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900 sm:text-4xl">Log In</h1>
-      <p className="mt-3 text-sm leading-6 text-zinc-600">
-        Access your store account to review orders, saved items, and pickup details.
-      </p>
-
-      <form className="mt-8 space-y-5">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <label htmlFor="signin-email" className="text-sm font-medium text-zinc-700">
-            Email Address
+          <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[var(--color-accent-hover)]">
+            Welcome back
+          </p>
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-primary sm:text-[2.15rem]">
+            Sign in to BulldogEx
+          </h2>
+        </div>
+        <span
+          className="hidden h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary-soft text-xl sm:grid"
+          aria-hidden="true"
+        >
+          🐾
+        </span>
+      </div>
+      <p className="mb-6 text-sm leading-6 text-slate-500">
+        Access your orders, pickup details, and store tools.
+      </p>
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          {error}
+        </p>
+      )}
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <div>
+          <label
+            htmlFor="signin-email"
+            className="mb-2 block text-xs font-semibold text-slate-700"
+          >
+            Email address
           </label>
           <input
             id="signin-email"
+            name="email"
             type="email"
-            placeholder="student@email.com"
+            required
+            placeholder="student@national-u.edu.ph"
             autoComplete="email"
             className={inputClasses}
           />
         </div>
-
         <div>
-          <label htmlFor="signin-password" className="text-sm font-medium text-zinc-700">
+          <label
+            htmlFor="signin-password"
+            className="mb-2 block text-xs font-semibold text-slate-700"
+          >
             Password
           </label>
-          <input
+          <PasswordInput
             id="signin-password"
-            type="password"
-            placeholder="Password"
+            name="password"
+            required
+            placeholder="Enter your password"
             autoComplete="current-password"
             className={inputClasses}
           />
-          <p className="mt-2 text-xs leading-5 text-zinc-500">
-            It must be a combination of minimum 8 letters, numbers, and symbols.
-          </p>
         </div>
-
-        <div className="flex items-center justify-between gap-4 text-sm">
-          <label className="flex items-center gap-2 text-zinc-600">
-            <input type="checkbox" className="h-4 w-4 rounded border-zinc-300 accent-zinc-900" />
-            <span>Remember me</span>
-          </label>
-          <button type="button" className="font-medium text-zinc-700 transition hover:text-zinc-900">
-            Forgot Password?
-          </button>
-        </div>
-
-        <Button type="submit" variant="primary" className={actionButtonClassName}>
-          Log In
-        </Button>
-
-        <div className="grid gap-3 pt-2 sm:grid-cols-2">
-          <Button type="button" variant="secondary" className={actionButtonClassName}>
-            Log In with Google
-          </Button>
-          <Button type="button" variant="secondary" className={actionButtonClassName}>
-            Log In with Apple
-          </Button>
-        </div>
+        <label className="flex w-fit cursor-pointer items-center gap-2.5 text-xs text-slate-600">
+          <input
+            name="remember"
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 accent-[var(--color-primary)]"
+          />{" "}
+          Keep me signed in
+        </label>
+        <button
+          disabled={submitting}
+          type="submit"
+          className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-white shadow-[0_12px_24px_-12px_rgba(20,45,114,0.8)] transition hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {submitting ? "Signing in…" : "Sign in"}
+        </button>
       </form>
-
-      <div className="mt-8 border-t border-zinc-200 pt-6 text-sm text-zinc-600">
-        No account yet?{' '}
-        <Link to="/auth/signup" className="font-semibold text-zinc-900 transition hover:text-zinc-600">
-          Sign Up
+      <p className="mt-6 text-center text-sm text-slate-500">
+        New to BulldogEx?{" "}
+        <Link
+          to="/auth/signup"
+          className="font-bold text-primary hover:underline"
+        >
+          Create an account
         </Link>
-      </div>
+      </p>
     </>
   );
 };

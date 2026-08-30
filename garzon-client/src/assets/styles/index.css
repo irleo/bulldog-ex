@@ -1,5 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;700;800&family=Sora:wght@500;600;700&display=swap");
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap");
 
 :root {
   /* Primary blue */
@@ -52,12 +52,29 @@
     @apply min-h-screen;
   }
 
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
   .footer-link {
     @apply text-[var(--color-accent-soft)] transition hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-soft)] focus:ring-offset-2 focus:ring-offset-[var(--color-primary)];
   }
 }
 
 @layer utilities {
+  .font-display {
+    font-family: "Manrope", sans-serif;
+  }
+
+  .font-body {
+    font-family: "Inter", sans-serif;
+  }
+
   /* Backgrounds */
   .bg-page {
     background-color: var(--color-bg);

@@ -1,5 +1,5 @@
 import { HttpStatus } from '../config/constants.js';
-import { ApiError } from './ApiError.js';
+import { ApiError } from '../middleware/errorHandlers.js';
 
 /** @param {unknown} value */
 export const escapeRegex = (value) =>
