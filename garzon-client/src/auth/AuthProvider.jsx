@@ -13,7 +13,7 @@ const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (!getStoredToken()) return;
-    apiRequest("/auth/me")
+    apiRequest("/users/me/session")
       .then((payload) => setUser(payload.data.user))
       .catch(() => clearStoredToken())
       .finally(() => setLoading(false));
@@ -34,9 +34,9 @@ const AuthProvider = ({ children }) => {
       user,
       loading,
       login: (credentials, remember) =>
-        authenticate("/auth/login", credentials, remember),
+        authenticate("/users/login", credentials, remember),
       register: async (details) => {
-        const payload = await apiRequest("/auth/register", {
+        const payload = await apiRequest("/users/register", {
           method: "POST",
           body: JSON.stringify(details),
         });
@@ -45,14 +45,14 @@ const AuthProvider = ({ children }) => {
       logout: async () => {
         try {
           if (getStoredToken())
-            await apiRequest("/auth/logout", { method: "POST" });
+            await apiRequest("/users/logout", { method: "POST" });
         } finally {
           clearStoredToken();
           setUser(null);
         }
       },
       refreshUser: async () => {
-        const payload = await apiRequest("/auth/me");
+        const payload = await apiRequest("/users/me/session");
         setUser(payload.data.user);
       },
     }),

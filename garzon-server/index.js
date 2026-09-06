@@ -6,7 +6,6 @@ import { CLIENT_ORIGIN, NODE_ENV, PORT } from './config/config.js';
 import { HttpStatus } from './config/constants.js';
 import connectDB from './config/db.js';
 import { notFoundHandler, serverErrorHandler } from './middleware/errorHandlers.js';
-import authRoutes from './routes/authRoutes.js';
 import cartRoutes from './routes/cartRoutes.js';
 import categoryRoutes from './routes/categoryRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
@@ -53,7 +52,6 @@ app.get('/api/v1/health', (_request, response) => {
 });
 
 // API V1
-app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/carts', cartRoutes);

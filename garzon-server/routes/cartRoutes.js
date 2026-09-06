@@ -7,12 +7,13 @@ import {
   removeCartItem,
   updateCartItem,
 } from '../controllers/cartController.js';
-import { authenticate, authorizeRoles } from '../middleware/authMiddleware.js';
+import { authenticate } from '../middleware/authentication.js';
+import { authorize } from '../middleware/authorization.js';
 import { validateObjectId } from '../middleware/validateObjectId.js';
 
 const router = Router();
 
-router.use(authenticate, authorizeRoles(UserRole.CUSTOMER));
+router.use(authenticate, authorize(UserRole.CUSTOMER));
 router.route('/').get(getMyCart).delete(clearMyCart);
 router.post('/items', addCartItem);
 router

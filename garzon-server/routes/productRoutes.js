@@ -11,7 +11,8 @@ import {
   setProductStatus,
   updateProduct,
 } from '../controllers/productController.js';
-import { authenticate, authorizeRoles } from '../middleware/authMiddleware.js';
+import { authenticate } from '../middleware/authentication.js';
+import { authorize } from '../middleware/authorization.js';
 import { ApiError } from '../middleware/errorHandlers.js';
 import { validateObjectId } from '../middleware/validateObjectId.js';
 
@@ -63,11 +64,11 @@ const uploadProductImage = (request, response, next) => {
 };
 
 router.get('/', listProducts);
-router.get('/admin', authenticate, authorizeRoles(UserRole.ADMIN), listProducts);
+router.get('/admin', authenticate, authorize(UserRole.ADMIN), listProducts);
 router.post(
   '/',
   authenticate,
-  authorizeRoles(UserRole.ADMIN),
+  authorize(UserRole.ADMIN),
   uploadProductImage,
   createProduct,
 );
@@ -77,14 +78,14 @@ router
   .get(getProduct)
   .patch(
     authenticate,
-    authorizeRoles(UserRole.ADMIN),
+    authorize(UserRole.ADMIN),
     uploadProductImage,
     updateProduct,
   );
 router.patch(
   '/:id/status',
   authenticate,
-  authorizeRoles(UserRole.ADMIN),
+  authorize(UserRole.ADMIN),
   validateObjectId(),
   setProductStatus,
 );

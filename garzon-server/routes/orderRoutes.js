@@ -9,26 +9,27 @@ import {
   listOrders,
   updateOrderStatus,
 } from '../controllers/orderController.js';
-import { authenticate, authorizeRoles } from '../middleware/authMiddleware.js';
+import { authenticate } from '../middleware/authentication.js';
+import { authorize } from '../middleware/authorization.js';
 import { validateObjectId } from '../middleware/validateObjectId.js';
 
 const router = Router();
 
 router.use(authenticate);
-router.get('/mine', authorizeRoles(UserRole.CUSTOMER), listMyOrders);
-router.get('/', authorizeRoles(UserRole.ADMIN), listOrders);
-router.post('/', authorizeRoles(UserRole.CUSTOMER), createOrder);
-router.patch('/:id/claim', authorizeRoles(UserRole.CUSTOMER), validateObjectId(), claimOrder);
+router.get('/mine', authorize(UserRole.CUSTOMER), listMyOrders);
+router.get('/', authorize(UserRole.ADMIN), listOrders);
+router.post('/', authorize(UserRole.CUSTOMER), createOrder);
+router.patch('/:id/claim', authorize(UserRole.CUSTOMER), validateObjectId(), claimOrder);
 router.patch(
   '/:id/cancel',
-  authorizeRoles(UserRole.CUSTOMER),
+  authorize(UserRole.CUSTOMER),
   validateObjectId(),
   cancelMyOrder,
 );
 router.get('/:id', validateObjectId(), getOrder);
 router.patch(
   '/:id/status',
-  authorizeRoles(UserRole.ADMIN),
+  authorize(UserRole.ADMIN),
   validateObjectId(),
   updateOrderStatus,
 );

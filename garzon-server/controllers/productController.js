@@ -22,11 +22,11 @@ const productFields = [
   "isActive",
 ];
 
-/** @param {Record<string, unknown>} source */
-const selectProductFields = (source) =>
+/** @param {Record<string, unknown> | undefined} source */
+const selectProductFields = (source = {}) =>
   Object.fromEntries(
     productFields
-      .filter((field) => source[field] !== undefined)
+      .filter((field) => source?.[field] !== undefined)
       .map((field) => [field, source[field]]),
   );
 

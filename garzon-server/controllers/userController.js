@@ -1,4 +1,7 @@
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { HttpStatus, UserRole } from "../config/constants.js";
+import { JWT_EXPIRES_IN, JWT_SECRET } from '../config/config.js';
 import User from "../models/userModel.js";
 import { ApiError, asyncHandler } from "../middleware/errorHandlers.js";
 import {
@@ -8,6 +11,13 @@ import {
 } from "../utils/query.js";
 import { selectFields } from "../utils/selectFields.js";
 
+const registrationFields = [
+  "firstName",
+  "lastName",
+  "email",
+  "phone",
+  "address",
+];
 const profileFields = ["firstName", "lastName", "phone", "address"];
 const adminEditableFields = [
   "firstName",
@@ -18,6 +28,112 @@ const adminEditableFields = [
 ];
 const userProjection =
   "firstName lastName email role phone address isActive createdAt updatedAt";
+
+export const serializeUser = (user) => ({
+  _id: user._id,
+  firstName: user.firstName,
+  lastName: user.lastName,
+  fullName: user.fullName,
+  email: user.email,
+  role: user.role,
+  phone: user.phone,
+  address: user.address,
+  isActive: user.isActive,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+});
+
+export const register = asyncHandler(async (request, response) => {
+  const password = String(request.body.password ?? "");
+  if (password.length < 8) {
+    throw new ApiError(
+      HttpStatus.BAD_REQUEST,
+      "Password must contain at least 8 characters.",
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const user = await User.create({
+    ...selectFields(request.body, registrationFields),
+    passwordHash,
+    role: UserRole.CUSTOMER,
+  });
+
+  response.status(HttpStatus.CREATED).json({
+    success: true,
+    message: "Account created successfully.",
+    data: { user: serializeUser(user) },
+  });
+});
+
+export const login = asyncHandler(async (request, response) => {
+  const email = String(request.body.email ?? "").trim().toLowerCase();
+  const password = String(request.body.password ?? "");
+  if (!email || !password) {
+    throw new ApiError(
+      HttpStatus.BAD_REQUEST,
+      "Email and password are required.",
+    );
+  }
+
+  const user = await User.findOne({ email }).select("+passwordHash");
+  const passwordMatches = user
+    ? await bcrypt.compare(password, user.passwordHash)
+    : false;
+  if (!user || !passwordMatches) {
+    throw new ApiError(
+      HttpStatus.UNAUTHORIZED,
+      "Email or password is incorrect.",
+    );
+  }
+  if (!user.isActive) {
+    throw new ApiError(HttpStatus.FORBIDDEN, "This account is inactive.");
+  }
+
+  response.status(HttpStatus.OK).json({
+    success: true,
+    message: "Signed in successfully.",
+    data: {
+      token: jwt.sign(
+        { sub: String(user._id), role: user.role },
+        JWT_SECRET,
+        {
+          expiresIn: JWT_EXPIRES_IN,
+          issuer: 'bulldogs-exchange-api',
+          audience: 'bulldogs-exchange-client',
+        },
+      ),
+      user: serializeUser(user),
+    },
+  });
+});
+
+export const logout = asyncHandler(async (_request, response) => {
+  response.status(HttpStatus.OK).json({
+    success: true,
+    message: 'Signed out successfully.',
+    data: null,
+  });
+});
+
+export const getSession = asyncHandler(async (request, response) => {
+  response.status(HttpStatus.OK).json({
+    success: true,
+    data: { user: serializeUser(request.user) },
+  });
+});
+
+const assertUserCanAccessTarget = (request, targetUserId) => {
+  const isAdmin = request.user.role === UserRole.ADMIN;
+  const isSameUser = String(request.user._id) === String(targetUserId);
+
+  if (!isAdmin && !isSameUser) {
+    throw new ApiError(
+      HttpStatus.FORBIDDEN,
+      "You can only edit your own user information.",
+    );
+  }
+};
 
 export const getMyProfile = asyncHandler(async (request, response) => {
   response.status(HttpStatus.OK).json({ success: true, data: request.user });
@@ -126,6 +242,8 @@ export const listUsers = asyncHandler(async (request, response) => {
 });
 
 export const getUser = asyncHandler(async (request, response) => {
+  assertUserCanAccessTarget(request, request.params.id);
+
   const user = await User.findById(request.params.id)
     .select(userProjection)
     .lean();
@@ -136,9 +254,15 @@ export const getUser = asyncHandler(async (request, response) => {
 });
 
 export const updateUser = asyncHandler(async (request, response) => {
+  assertUserCanAccessTarget(request, request.params.id);
+
+  const fields =
+    request.user.role === UserRole.ADMIN
+      ? adminEditableFields
+      : profileFields;
   const user = await User.findByIdAndUpdate(
     request.params.id,
-    { $set: selectFields(request.body, adminEditableFields) },
+    { $set: selectFields(request.body, fields) },
     { new: true, runValidators: true },
   )
     .select(userProjection)
@@ -184,5 +308,29 @@ export const setUserStatus = asyncHandler(async (request, response) => {
     success: true,
     message: `User ${user.isActive ? "activated" : "deactivated"} successfully.`,
     data: user,
+  });
+});
+
+export const deleteUser = asyncHandler(async (request, response) => {
+  if (String(request.user._id) === String(request.params.id)) {
+    throw new ApiError(
+      HttpStatus.BAD_REQUEST,
+      "You cannot delete your own administrator account.",
+    );
+  }
+
+  const user = await User.findByIdAndDelete(request.params.id).select(
+    "_id firstName lastName email role",
+  );
+
+  if (!user) {
+    throw new ApiError(HttpStatus.NOT_FOUND, "User was not found.");
+  }
+
+  response.status(HttpStatus.OK).json({
+    success: true,
+    message: "User deleted successfully.",
+    count: 1,
+    data: { _id: user._id, deleted: true },
   });
 });

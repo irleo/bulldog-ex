@@ -8,17 +8,18 @@ import {
   updateCategory,
 } from '../controllers/categoryController.js';
 import { validateObjectId } from '../middleware/validateObjectId.js';
-import { authenticate, authorizeRoles } from '../middleware/authMiddleware.js';
+import { authenticate } from '../middleware/authentication.js';
+import { authorize } from '../middleware/authorization.js';
 
 const router = Router();
 
 router.get('/', listCategories);
-router.post('/', authenticate, authorizeRoles(UserRole.ADMIN), createCategory);
+router.post('/', authenticate, authorize(UserRole.ADMIN), createCategory);
 router
   .route('/:id')
   .all(validateObjectId())
   .get(getCategory)
-  .patch(authenticate, authorizeRoles(UserRole.ADMIN), updateCategory)
-  .delete(authenticate, authorizeRoles(UserRole.ADMIN), deleteCategory);
+  .patch(authenticate, authorize(UserRole.ADMIN), updateCategory)
+  .delete(authenticate, authorize(UserRole.ADMIN), deleteCategory);
 
 export default router;

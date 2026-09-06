@@ -28,7 +28,7 @@ update, or remove accounts, carts, orders, or reviews.
 | Cart | - | Manage own cart | - |
 | Orders | - | Create and view own orders | View all and update status |
 | Profile | - | View/edit own profile and password | View/edit own profile and password |
-| Users | - | - | View, edit, activate/deactivate |
+| Users | - | View/edit own record | View, edit, activate/deactivate, delete |
 
 Every protected request sends `Authorization: Bearer <token>`. Authentication
 also checks the database on every request, so deactivated accounts immediately
@@ -36,10 +36,10 @@ lose access even when they still hold an unexpired token.
 
 ## Primary endpoints
 
-- `/api/v1/auth/register`, `/login`, `/logout`, `/me`
+- `/api/v1/users/register`, `/login`, `/logout`, `/me/session`
 - `/api/v1/products` and admin `/api/v1/products/admin`
 - `/api/v1/categories`
 - `/api/v1/carts`
 - `/api/v1/orders` and customer `/api/v1/orders/mine`
 - `/api/v1/reviews` and admin `/api/v1/reviews/admin`
-- `/api/v1/users/me` and admin `/api/v1/users`
+- `/api/v1/users/me`, `/api/v1/users/:id`, and admin `/api/v1/users`

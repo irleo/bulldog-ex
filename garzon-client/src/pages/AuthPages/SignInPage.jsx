@@ -24,8 +24,11 @@ const SignInPage = () => {
         { email: form.get("email"), password: form.get("password") },
         form.get("remember") === "on",
       );
-      const fallback = user.role === "admin" ? "/admin/products" : "/products";
-      navigate(location.state?.from?.pathname ?? fallback, { replace: true });
+      const destination =
+        user.role === "admin"
+          ? "/admin"
+          : (location.state?.from?.pathname ?? "/products");
+      navigate(destination, { replace: true });
     } catch (requestError) {
       setError(requestError.message);
     } finally {

@@ -21,7 +21,7 @@ The project is split into two independently installed and executed Node.js packa
 
 The client reads `VITE_API_URL` from `garzon-client/.env`. Its centralized `apiRequest()` function in `src/api/apiClient.js` uses the browser Fetch API to send requests to the configured server URL. JSON request bodies automatically receive a `Content-Type: application/json` header, while `FormData` requests allow the browser to set the multipart boundary used for product image uploads.
 
-After a successful login, the client stores the returned JWT in `sessionStorage`, or in `localStorage` when the user selects the remember option. Future protected requests include the token as `Authorization: Bearer <token>`. `AuthProvider` restores the session through `GET /auth/me`, and client route guards control the user experience for authenticated and role-specific pages. These route guards are not the security boundary: the server independently verifies the JWT, reloads the user, checks whether the account is active, and enforces customer/admin permissions.
+After a successful login, the client stores the returned JWT in `sessionStorage`, or in `localStorage` when the user selects the remember option. Future protected requests include the token as `Authorization: Bearer <token>`. `AuthProvider` restores the session through `GET /users/me/session`, and client route guards control the user experience for authenticated and role-specific pages. These route guards are not the security boundary: the server independently verifies the JWT, reloads the user, checks whether the account is active, and enforces customer/admin permissions.
 
 On the server, `CLIENT_ORIGIN` configures CORS so the browser may call the API. Requests pass through Express middleware and the matching `/api/v1` router before reaching a controller. Controllers validate and normalize input, execute Mongoose operations, and return a consistent JSON shape containing fields such as `success`, `message`, `count`, `data`, and, where applicable, `pagination` or `error`. Uploaded product images are served from `/uploads`, and the client can use those server-relative paths when displaying products.
 
@@ -110,13 +110,12 @@ Controllers are wrapped by `asyncHandler`, which forwards rejected promises into
 
 ## API Route Groups
 
-- `/api/v1/auth` - registration, login, logout, and active-session lookup
+- `/api/v1/users` - registration, login, logout, session lookup, profiles, and user management
 - `/api/v1/categories` - catalog categories
 - `/api/v1/products` - public catalog and admin product management
 - `/api/v1/carts` - authenticated customer cart operations
 - `/api/v1/orders` - customer checkout/history and admin order processing
 - `/api/v1/reviews` - product reviews and admin moderation
-- `/api/v1/users` - profile and admin user management
 - `/api/v1/health` - API health check
 
 ## Fork and Clone Instructions
@@ -250,7 +249,6 @@ garzon-webprog-longexam/
     |   |-- constants.js              # Status, role, and order constants
     |   `-- db.js                     # MongoDB connection
     |-- routes/                       # Endpoint and middleware composition
-    |   |-- authRoutes.js
     |   |-- cartRoutes.js
     |   |-- categoryRoutes.js
     |   |-- orderRoutes.js
@@ -258,7 +256,6 @@ garzon-webprog-longexam/
     |   |-- reviewRoutes.js
     |   `-- userRoutes.js
     |-- controllers/                  # Request/use-case handlers
-    |   |-- authController.js
     |   |-- cartController.js
     |   |-- categoryController.js
     |   |-- orderController.js
