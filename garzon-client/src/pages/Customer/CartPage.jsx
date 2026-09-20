@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "../../api/apiClient.js";
+import { useAuth } from "../../auth/authContext.js";
 import { notify } from "../../utils/toast.js";
 import {
+  useConfirmation,
   ProductImage,
   StoreCard,
   StoreIcon,
@@ -19,65 +21,69 @@ const CartPage = () => {
   const [cart, setCart] = useState(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [itemToRemove, setItemToRemove] = useState(null);
-  const [removing, setRemoving] = useState(false);
-
+  const { user } = useAuth();
+  const { confirm, confirmation } = useConfirmation();
+  const inFlight = useRef(false);
   useEffect(() => {
     apiRequest("/carts")
       .then((payload) => setCart(payload.data))
       .catch((requestError) => setError(requestError.message));
   }, []);
 
-  useEffect(() => {
-    if (!itemToRemove) return undefined;
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape" && !removing) setItemToRemove(null);
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [itemToRemove, removing]);
-
-  const mutate = async (path, options) => {
+  const mutate = async (path, options, reportError = true) => {
+    if (inFlight.current) return false;
+    inFlight.current = true;
+    setSubmitting(true);
     try {
       const payload = await apiRequest(path, options);
       setCart(payload.data);
+      return true;
     } catch (requestError) {
+      if (!reportError) throw requestError;
       notify.error(requestError.message);
-    }
-  };
-
-  const checkout = async () => {
-    setSubmitting(true);
-    try {
-      const payload = await apiRequest("/orders", { method: "POST" });
-      setCart((current) => ({ ...current, items: [] }));
-      notify.success(`Order ${payload.data.orderNumber} was placed successfully.`);
-    } catch (requestError) {
-      notify.error(requestError.message);
+      return false;
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };
 
-  const removeItem = async () => {
-    const product = itemToRemove?.productId;
-    if (!product?._id) return;
+  const removeItem = (item) => confirm({
+    title: "Remove item?", message: `Remove "${item.productId.name}" from your cart? You can add it again while it remains available.`,
+    cancelLabel: "Keep item", confirmLabel: "Remove item", destructive: true,
+    onConfirm: async () => {
+      const removed = await mutate(`/carts/items/${item.productId._id}`, { method: "DELETE" }, false);
+      if (removed) notify.success(`${item.productId.name} was removed from your cart.`);
+      return removed;
+    },
+  });
 
-    setRemoving(true);
-    try {
-      const payload = await apiRequest(`/carts/items/${product._id}`, {
-        method: "DELETE",
-      });
-      setCart(payload.data);
-      setItemToRemove(null);
-      notify.success(`${product.name} was removed from your cart.`);
-    } catch (requestError) {
-      notify.error(requestError.message);
-    } finally {
-      setRemoving(false);
+  const checkout = () => {
+    if (inFlight.current) return;
+    if (!cart?.items.length) { setError("Your cart is empty."); return; }
+    if (cart.items.some((item) => !item.productId?.isActive || item.quantity < 1 || item.quantity > item.productId.stock)) {
+      setError("Some products are unavailable or exceed available stock. Update your cart before placing an order.");
+      return;
     }
+    if (!user.phone || !user.address?.street || !user.address.city || !user.address.province || !user.address.postalCode) {
+      setError("Complete your phone number and address in your profile before placing an order.");
+      return;
+    }
+    setError("");
+    confirm({ title: "Place order?", confirmLabel: "Place order", cancelLabel: "Review order",
+      message: `Place this campus pickup order for ${peso.format(total)} for ${user.firstName} ${user.lastName} (${user.phone})? Check the products and quantities in your cart. You can cancel only while the order is pending; availability is confirmed during processing.`,
+      onConfirm: async () => {
+        if (inFlight.current) return false;
+        inFlight.current = true;
+        setSubmitting(true);
+        try {
+          const payload = await apiRequest("/orders", { method: "POST" });
+          setCart((current) => ({ ...current, items: [] }));
+          notify.success(`Order ${payload.data.orderNumber} was placed successfully.`);
+        } finally { inFlight.current = false; setSubmitting(false); }
+      },
+    });
   };
-
   const total =
     cart?.items.reduce(
       (sum, item) => sum + (item.productId?.price ?? 0) * item.quantity,
@@ -86,71 +92,7 @@ const CartPage = () => {
 
   return (
     <StorePage>
-      {itemToRemove && (
-        <div
-          className="fixed inset-0 z-[70] grid place-items-center bg-[#071230]/55 p-4 backdrop-blur-sm"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !removing) {
-              setItemToRemove(null);
-            }
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="remove-cart-item-title"
-            aria-describedby="remove-cart-item-description"
-            className="w-full max-w-md overflow-hidden rounded-2xl border border-[#e3e7f0] bg-white shadow-2xl"
-          >
-            <div className="flex items-start gap-4 p-6">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#eef1f8]">
-                <ProductImage
-                  product={itemToRemove.productId}
-                  alt=""
-                  className="h-full w-full object-contain p-1"
-                />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-700">
-                  Remove item
-                </p>
-                <h2
-                  id="remove-cart-item-title"
-                  className="font-display mt-1 text-lg font-extrabold"
-                >
-                  Remove {itemToRemove.productId?.name ?? "this product"}?
-                </h2>
-                <p
-                  id="remove-cart-item-description"
-                  className="mt-2 text-sm leading-6 text-[#64748b]"
-                >
-                  This product and its selected quantity will be removed from
-                  your cart.
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-[#e3e7f0] bg-[#f8f9fc] px-6 py-4">
-              <button
-                type="button"
-                disabled={removing}
-                onClick={() => setItemToRemove(null)}
-                className="rounded-lg border border-[#e3e7f0] bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-              >
-                Keep item
-              </button>
-              <button
-                type="button"
-                disabled={removing}
-                onClick={removeItem}
-                className="rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {removing ? "Removing…" : "Remove item"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmation}
       <StorePageHeader
         eyebrow="Bag"
         title="Your cart"
@@ -213,6 +155,7 @@ const CartPage = () => {
                         })
                       }
                       className="grid h-8 w-8 place-items-center"
+                      disabled={submitting || !product?._id || item.quantity <= 1}
                       aria-label="Decrease quantity"
                     >
                       <StoreIcon name="minus" className="h-3.5 w-3.5" />
@@ -228,6 +171,7 @@ const CartPage = () => {
                         })
                       }
                       className="grid h-8 w-8 place-items-center"
+                      disabled={submitting || !product?._id || item.quantity >= product.stock || item.quantity >= 100}
                       aria-label="Increase quantity"
                     >
                       <StoreIcon name="plus" className="h-3.5 w-3.5" />
@@ -238,8 +182,8 @@ const CartPage = () => {
                   </strong>
                   <button
                     type="button"
-                    onClick={() => setItemToRemove(item)}
-                    disabled={!product?._id}
+                    onClick={() => removeItem(item)}
+                    disabled={submitting || !product?._id}
                     className="text-red-700"
                     aria-label={`Remove ${product?.name}`}
                   >

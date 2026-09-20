@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/authContext.js";
 import { PasswordInput } from "../../components/StoreUI.jsx";
@@ -12,9 +12,22 @@ const SignInPage = () => {
   const location = useLocation();
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!cooldownUntil) return;
+    const interval = window.setInterval(() => {
+      const seconds = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+      setRemainingSeconds(seconds);
+      if (!seconds) window.clearInterval(interval);
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, [cooldownUntil]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (submitting || Date.now() < cooldownUntil) return;
     setError("");
     setSubmitting(true);
     const form = new FormData(event.currentTarget);
@@ -31,6 +44,12 @@ const SignInPage = () => {
       navigate(destination, { replace: true });
     } catch (requestError) {
       setError(requestError.message);
+      const seconds = Number(requestError.details?.retryAfterSeconds);
+      if (requestError.status === 429 && Number.isFinite(seconds) && seconds > 0) {
+        setRemainingSeconds(Math.ceil(seconds));
+        setCooldownUntil(Date.now() + seconds * 1000);
+        setError('Too many login attempts. Please wait before trying again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -108,11 +127,11 @@ const SignInPage = () => {
           Keep me signed in
         </label>
         <button
-          disabled={submitting}
+          disabled={submitting || remainingSeconds > 0}
           type="submit"
           className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-white shadow-[0_12px_24px_-12px_rgba(20,45,114,0.8)] transition hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting ? "Signing in…" : "Sign in"}
+          {remainingSeconds > 0 ? `Try again in ${remainingSeconds}s` : submitting ? "Signing in…" : "Sign in"}
         </button>
       </form>
       <p className="mt-6 text-center text-sm text-slate-500">

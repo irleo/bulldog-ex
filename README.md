@@ -76,6 +76,8 @@ The following packages belong specifically to `garzon-server/package.json`:
 | `dotenv` | Loads server configuration such as the port, database URI, client origin, and JWT settings from `.env`. |
 | `morgan` | Logs incoming HTTP requests in development and production-appropriate formats. |
 | `multer` | Parses multipart form data and validates/stores uploaded product images. |
+| `helmet` | Adds HTTP security headers while allowing cross-origin product images. |
+| `express-rate-limit` | Applies API, mutation, login, registration, and password-change request limits. |
 
 The server targets Node.js 20 or later and uses Node's built-in watch mode for development, so it does not require Nodemon.
 
@@ -240,10 +242,12 @@ garzon-webprog-longexam/
 |       |   `-- NotFoundPage.jsx
 |       |-- assets/                   # Images and global CSS
 |       `-- utils/
-|           `-- toast.js              # Shared notification helpers
+|           |-- toast.js              # Shared notification helpers
+|           `-- validation.js         # Client input validation
 `-- garzon-server/                    # REST API and persistence application
     |-- package.json                  # Server dependencies and scripts
-    |-- index.js                      # Express composition/root entry point
+    |-- index.js                      # Database/index readiness and HTTP startup
+    |-- app.js                        # Express middleware and route composition
     |-- config/
     |   |-- config.js                 # Validated environment configuration
     |   |-- constants.js              # Status, role, and order constants
@@ -262,11 +266,16 @@ garzon-webprog-longexam/
     |   |-- productController.js
     |   |-- reviewController.js
     |   `-- userController.js
-    |-- middleware/                   # Auth, validation, and error pipeline
-    |   |-- authMiddleware.js
+    |-- middleware/                   # Authentication, authorization, validation, and errors
+    |   |-- auditLoggerMiddleware.js   # Persistent request/response audit records
+    |   |-- rateLimiterMiddleware.js   # IP quotas and account login cooldowns
+    |   |-- authentication.js
+    |   |-- authorization.js
     |   |-- errorHandlers.js
+    |   |-- validationMiddleware.js    # API request validation before controllers
     |   `-- validateObjectId.js
     |-- models/                       # Mongoose data models and indexes
+    |   |-- logModel.js                # Completed request audit records
     |   |-- cartModel.js
     |   |-- categoryModel.js
     |   |-- orderModel.js
@@ -274,6 +283,11 @@ garzon-webprog-longexam/
     |   |-- reviewModel.js
     |   `-- userModel.js
     |-- utils/                        # Query, token, slug, and field helpers
+    |   |-- query.js
+    |   |-- selectFields.js
+    |   |-- slugify.js
+    |   |-- token.js
+    |   `-- validation.js             # Authoritative API input validation
     `-- uploads/                      # Server-managed product images
 ```
 
@@ -282,5 +296,6 @@ garzon-webprog-longexam/
 - Public registration always creates a customer account.
 - Client-side route guards improve navigation but do not replace server authorization.
 - Do not commit either `.env` file or expose `JWT_SECRET` and database credentials.
+- Activity 5 middleware, cooldown policy, and verification commands are documented in `garzon-server/README.md`.
 
 

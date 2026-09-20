@@ -21,6 +21,9 @@ const SignUpPage = () => {
       await register({
         firstName: form.get("firstName"),
         lastName: form.get("lastName"),
+        studentNumber: form.get("studentNumber"),
+        course: form.get("course"),
+        yearLevel: form.get("yearLevel"),
         email: form.get("email"),
         password: form.get("password"),
       });
@@ -89,6 +92,20 @@ const SignUpPage = () => {
               autoComplete="family-name"
               className={inputClasses}
             />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="student-number" className="mb-1.5 block text-xs font-semibold text-slate-700">Student number</label>
+          <input id="student-number" name="studentNumber" type="text" pattern="[0-9]{4}[-][0-9]{6}" minLength="11" maxLength="11" required placeholder="e.g. 2023-123456" title="Use the format ####-######" className={inputClasses} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="signup-course" className="mb-1.5 block text-xs font-semibold text-slate-700">Course</label>
+            <input id="signup-course" name="course" required minLength="2" maxLength="120" placeholder="e.g. BSIT" className={inputClasses} />
+          </div>
+          <div>
+            <label htmlFor="signup-year-level" className="mb-1.5 block text-xs font-semibold text-slate-700">Year level</label>
+            <input id="signup-year-level" name="yearLevel" required minLength="1" maxLength="30" placeholder="e.g. 4th Year" className={inputClasses} />
           </div>
         </div>
         <div>

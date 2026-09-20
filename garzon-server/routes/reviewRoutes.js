@@ -1,3 +1,4 @@
+import { validateRequest } from '../middleware/validationMiddleware.js';
 import { Router } from 'express';
 import { UserRole } from '../config/constants.js';
 import {
@@ -12,6 +13,7 @@ import { authorize } from '../middleware/authorization.js';
 import { validateObjectId } from '../middleware/validateObjectId.js';
 
 const router = Router();
+router.use(validateRequest);
 
 router.get('/', listReviews);
 router.post('/', authenticate, authorize(UserRole.CUSTOMER), createReview);

@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/authContext.js";
-import { StoreIcon } from "./StoreUI.jsx";
+import { StoreIcon, useConfirmation } from "./StoreUI.jsx";
 
 const guestLinks = [
   ["Home", "/"],
@@ -21,20 +21,21 @@ const navLinkClassName = ({ isActive }) =>
 const NavBar = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { confirm, confirmation } = useConfirmation();
   const isCustomer = user?.role === "customer";
   const links = isCustomer ? customerLinks : guestLinks;
 
-  const handleLogout = async () => {
-    try {
+  const handleLogout = () => confirm({
+    title: "Log out?", message: "This will end your current session and discard any unsaved changes. You can sign in again at any time.",
+    confirmLabel: "Log out", onConfirm: async () => {
       await logout();
       navigate("/");
-    } catch (error) {
-      console.error("Unable to log out:", error);
-    }
-  };
+    },
+  });
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#e3e7f0] bg-white">
+      {confirmation}
       <div className="h-[3px] bg-[#d4af37]" />
       <div className="flex h-16 w-full items-center justify-between gap-3 px-4 sm:px-8 lg:px-10 xl:px-14">
         <NavLink

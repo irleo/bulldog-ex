@@ -107,11 +107,16 @@ export const listAdminReviews = asyncHandler((request, response) => {
 });
 
 export const updateReview = asyncHandler(async (request, response) => {
-  const updates = selectFields(request.body, ["isFlagged", "isHidden"]);
+  const updates = selectFields(request.body, [
+    "rating",
+    "content",
+    "isFlagged",
+    "isHidden",
+  ]);
   if (Object.keys(updates).length === 0) {
     throw new ApiError(
       HttpStatus.BAD_REQUEST,
-      "Only review flagging and visibility can be changed.",
+      "Provide rating, content, flagging, or visibility changes.",
     );
   }
   const review = await Review.findByIdAndUpdate(
@@ -125,7 +130,7 @@ export const updateReview = asyncHandler(async (request, response) => {
   }
   response.status(HttpStatus.OK).json({
     success: true,
-    message: "Review moderation updated successfully.",
+    message: "Review updated successfully.",
     data: review,
   });
 });

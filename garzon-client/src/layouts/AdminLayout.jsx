@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/authContext.js";
+import { useConfirmation } from "../components/StoreUI.jsx";
 
 const navigation = [
   { label: "Dashboard", to: "/admin", icon: "chart" },
@@ -45,17 +46,17 @@ const AdminLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { confirm, confirmation } = useConfirmation();
   const initials =
     `${user?.firstName?.[0] ?? "A"}${user?.lastName?.[0] ?? ""}`.toUpperCase();
 
-  const handleLogout = async () => {
-    try {
+  const handleLogout = () => confirm({
+    title: "Log out?", message: "This will end your admin session and discard any unsaved changes. You can sign in again at any time.",
+    confirmLabel: "Log out", onConfirm: async () => {
       await logout();
       navigate("/auth/signin");
-    } catch (error) {
-      console.error("Unable to log out:", error);
-    }
-  };
+    },
+  });
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -132,6 +133,7 @@ const AdminLayout = () => {
 
   return (
     <div className="min-h-screen bg-[#f3f5fa] text-default">
+      {confirmation}
       <aside
         className={`fixed inset-y-0 left-0 z-40 hidden bg-[#0b1b46] shadow-2xl transition-[width] duration-300 lg:block ${collapsed ? "w-20" : "w-64"}`}
       >

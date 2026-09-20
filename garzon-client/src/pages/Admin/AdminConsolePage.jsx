@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../api/apiClient.js";
 import { useAuth } from "../../auth/authContext.js";
 import { notify } from "../../utils/toast.js";
 import {
+  useConfirmation,
+  useUnsavedForm,
   ProductImage,
   StatusPill,
   StoreCard,
@@ -111,10 +113,16 @@ const sectionDetails = {
 
 const AdminConsolePage = ({ section }) => {
   const { user } = useAuth();
+  const { confirm, confirmation } = useConfirmation();
+  const { formRef, onFormChange, markSaved, guardDiscard } = useUnsavedForm(confirm);
+  const inFlight = useRef(false);
+  const [saving, setSaving] = useState(false);
   const [records, setRecords] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selected, setSelected] = useState(null);
   const [productModalOpen, setProductModalOpen] = useState(false);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [tableSort, setTableSort] = useState(null);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({
@@ -217,31 +225,73 @@ const AdminConsolePage = ({ section }) => {
     }
   }, [section]);
 
+  const closeEditor = useCallback(() => {
+    if (inFlight.current) return;
+    guardDiscard(() => {
+      setProductModalOpen(false);
+      setUserModalOpen(false);
+      setReviewModalOpen(false);
+      setSelected(null);
+    });
+  }, [guardDiscard]);
+
   useEffect(() => {
-    if (!productModalOpen) return undefined;
+    if (!productModalOpen && !userModalOpen && !reviewModalOpen) return;
     const closeOnEscape = (event) => {
-      if (event.key === "Escape") {
-        setProductModalOpen(false);
-        setSelected(null);
-      }
+      if (event.key === "Escape" && !document.querySelector("dialog[open]")) closeEditor();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [productModalOpen]);
+  }, [productModalOpen, userModalOpen, reviewModalOpen, closeEditor]);
 
   const mutate = async (path, options, successMessage) => {
-    try {
-      await apiRequest(path, options);
-      setSelected(null);
-      notify.success(successMessage);
-      await load();
-      return true;
-    } catch (requestError) {
-      notify.error(requestError.message);
-      return false;
+    if (inFlight.current) return false;
+    const [, resource, id, action] = path.split("/");
+    const record = records.find((entry) => entry._id === id);
+    const body = typeof options.body === "string" ? JSON.parse(options.body) : {};
+    let question;
+    if (resource === "products" && action === "status") {
+      question = {
+        title: body.isActive ? "Reactivate product?" : "Deactivate product?",
+        message: `${body.isActive ? "Make" : "Remove"} "${record?.name ?? id}" (${record?.sku ?? "product"}) ${body.isActive ? "available to customers again" : "from the customer catalog"}? You can reverse this by changing its status again.`,
+        confirmLabel: body.isActive ? "Reactivate product" : "Deactivate product", destructive: !body.isActive,
+      };
+    } else if (resource === "orders" && action === "status") {
+      const label = record?.orderNumber ?? id;
+      const next = body.status;
+      question = {
+        title: next === "cancelled" ? `Cancel order ${label}?` : next === "confirmed" ? `Confirm order ${label}?` : `Mark order ${label} as ready?`,
+        message: next === "cancelled" ? "This permanently cancels the order and restores reserved inventory when applicable. The cancellation cannot be undone."
+          : next === "confirmed" ? "Confirm this order and reserve its inventory? It cannot return to pending; it may still be cancelled before it is ready for pickup."
+          : "Confirm that this order is prepared for customer pickup. The customer will see it as ready, and it can no longer be cancelled or returned to preparing.",
+        cancelLabel: next === "cancelled" ? "Keep order" : "Cancel",
+        confirmLabel: next === "cancelled" ? "Cancel order" : next === "confirmed" ? "Confirm order" : "Mark as ready", destructive: next === "cancelled",
+      };
+    } else if (resource === "users" && (options.method === "DELETE" || (action === "status" && !body.isActive))) {
+      const deleting = options.method === "DELETE";
+      question = { title: deleting ? "Delete user?" : "Suspend user?",
+        message: `${deleting ? "Permanently delete" : "Suspend"} ${record?.firstName ?? "this"} ${record?.lastName ?? "user"} (${record?.email ?? id})? ${deleting ? "The account will be removed and related order or review records may lose their user reference. This cannot be undone." : "They will lose access to their account. An administrator can reactivate it later."}`,
+        confirmLabel: deleting ? "Delete user" : "Suspend user", destructive: true };
+    } else if (resource === "users" && body.email && body.email !== record?.email) {
+      question = { title: "Change sign-in email?", message: `Change ${record?.firstName ?? "this user"}'s sign-in email from ${record?.email} to ${body.email}? They must use the new address to sign in. An administrator can change it back.`, confirmLabel: "Change email" };
     }
+    const execute = async () => {
+      if (inFlight.current) return false;
+      inFlight.current = true;
+      setSaving(true);
+      try {
+        await apiRequest(path, options);
+        markSaved();
+        setSelected(null);
+        notify.success(successMessage);
+        await load();
+        return true;
+      } finally { inFlight.current = false; setSaving(false); }
+    };
+    if (question) return confirm({ ...question, onConfirm: execute });
+    try { return await execute(); }
+    catch (requestError) { notify.error(requestError.message); return false; }
   };
-
   const toggleTableSort = (key) => {
     setTableSort((current) => ({
       key,
@@ -277,6 +327,54 @@ const AdminConsolePage = ({ section }) => {
     if (saved) setProductModalOpen(false);
   };
 
+  const saveUser = async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const saved = await mutate(
+      `/users/${selected._id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          firstName: form.get("firstName"),
+          lastName: form.get("lastName"),
+          email: form.get("email"),
+          studentNumber: form.get("studentNumber") || undefined,
+          course: form.get("course") || undefined,
+          yearLevel: form.get("yearLevel") || undefined,
+          phone: form.get("phone") || undefined,
+        }),
+      },
+      "User updated.",
+    );
+    if (saved) setUserModalOpen(false);
+  };
+
+  const deleteUser = async (account) => {
+    if (String(account._id) === String(user?._id)) return;
+    await mutate(
+      `/users/${account._id}`,
+      { method: "DELETE" },
+      "User deleted.",
+    );
+  };
+
+  const saveReview = async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const saved = await mutate(
+      `/reviews/${selected._id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          rating: Number(form.get("rating")),
+          content: form.get("content"),
+        }),
+      },
+      "Review updated.",
+    );
+    if (saved) setReviewModalOpen(false);
+  };
+
   const renderProducts = () => {
     return (
       <>
@@ -286,8 +384,7 @@ const AdminConsolePage = ({ section }) => {
             role="presentation"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) {
-                setProductModalOpen(false);
-                setSelected(null);
+                closeEditor();
               }
             }}
           >
@@ -312,8 +409,7 @@ const AdminConsolePage = ({ section }) => {
                 <button
                   type="button"
                   onClick={() => {
-                    setProductModalOpen(false);
-                    setSelected(null);
+                    closeEditor();
                   }}
                   className="grid h-9 w-9 place-items-center rounded-lg border border-[#e3e7f0] text-[#64748b]"
                   aria-label="Close product form"
@@ -323,7 +419,7 @@ const AdminConsolePage = ({ section }) => {
               </div>
               <form
                 key={selected?._id ?? "new"}
-                onSubmit={saveProduct}
+                ref={formRef} onChange={onFormChange} onSubmit={saveProduct}
                 className="grid gap-4 p-6 md:grid-cols-2"
               >
                 <input
@@ -404,14 +500,13 @@ const AdminConsolePage = ({ section }) => {
                   <button
                     type="button"
                     onClick={() => {
-                      setProductModalOpen(false);
-                      setSelected(null);
+                      closeEditor();
                     }}
                     className="rounded-lg border border-[#e3e7f0] px-5 py-2.5 text-sm font-semibold"
                   >
                     Cancel
                   </button>
-                  <button className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">
+                  <button disabled={saving} className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">
                     {selected ? "Save changes" : "Create product"}
                   </button>
                 </div>
@@ -686,6 +781,30 @@ const AdminConsolePage = ({ section }) => {
   const renderReviews = () => {
     return (
       <>
+        {reviewModalOpen && selected && (
+          <div className="fixed inset-0 z-[70] grid place-items-center bg-[#071230]/55 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-[#e3e7f0] bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-[#e3e7f0] px-6 py-5">
+                <h2 className="font-display text-lg font-extrabold">Edit review</h2>
+                <button type="button" onClick={closeEditor} className="rounded-lg border border-[#e3e7f0] px-3 py-1.5 text-sm">Close</button>
+              </div>
+              <form ref={formRef} onChange={onFormChange} onSubmit={saveReview} className="grid gap-4 p-6">
+                <label className="grid gap-1.5 text-sm font-semibold">
+                  Rating
+                  <input name="rating" type="number" min="1" max="5" required defaultValue={selected.rating} className={fieldClass} />
+                </label>
+                <label className="grid gap-1.5 text-sm font-semibold">
+                  Review
+                  <textarea name="content" minLength="10" maxLength="1000" required defaultValue={selected.content} className={`${fieldClass} min-h-32`} />
+                </label>
+                <div className="flex justify-end gap-2 border-t border-[#e3e7f0] pt-4">
+                  <button type="button" onClick={closeEditor} className="rounded-lg border border-[#e3e7f0] px-5 py-2.5 text-sm font-semibold">Cancel</button>
+                  <button disabled={saving} className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">Save changes</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         <FilterBar
           query={filters.query}
           onQueryChange={(value) => updateFilter("query", value)}
@@ -738,6 +857,16 @@ const AdminConsolePage = ({ section }) => {
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelected(review);
+                      setReviewModalOpen(true);
+                    }}
+                    className="rounded-lg border border-[#e3e7f0] px-3 py-2 text-xs font-semibold text-[#0b1b46]"
+                  >
+                    Edit
+                  </button>
                   <button
                     type="button"
                     onClick={() =>
@@ -798,6 +927,46 @@ const AdminConsolePage = ({ section }) => {
   const renderUsers = () => {
     return (
       <>
+        {userModalOpen && selected && (
+          <div className="fixed inset-0 z-[70] grid place-items-center bg-[#071230]/55 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-[#e3e7f0] bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-[#e3e7f0] px-6 py-5">
+                <h2 className="font-display text-lg font-extrabold">Edit user</h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeEditor();
+                  }}
+                  className="rounded-lg border border-[#e3e7f0] px-3 py-1.5 text-sm"
+                >
+                  Close
+                </button>
+              </div>
+              <form ref={formRef} onChange={onFormChange} onSubmit={saveUser} className="grid gap-4 p-6">
+                <input name="firstName" required defaultValue={selected.firstName} className={fieldClass} placeholder="First name" />
+                <input name="lastName" required defaultValue={selected.lastName} className={fieldClass} placeholder="Last name" />
+                <input name="email" type="email" required defaultValue={selected.email} className={fieldClass} placeholder="Email address" />
+                <label className="grid gap-1.5 text-xs font-semibold">
+                  Student number
+                  <input name="studentNumber" type="text" required={Boolean(selected.studentNumber)} pattern="[0-9]{4}[-][0-9]{6}" minLength="11" maxLength="11" defaultValue={selected.studentNumber ?? ""} className={fieldClass} placeholder="2023-123456" title="Use the format ####-######" />
+                </label>
+                <label className="grid gap-1.5 text-xs font-semibold">
+                  Course
+                  <input name="course" required={Boolean(selected.course)} minLength="2" maxLength="120" defaultValue={selected.course ?? ""} className={fieldClass} placeholder="BSIT" />
+                </label>
+                <label className="grid gap-1.5 text-xs font-semibold">
+                  Year level
+                  <input name="yearLevel" required={Boolean(selected.yearLevel)} minLength="1" maxLength="30" defaultValue={selected.yearLevel ?? ""} className={fieldClass} placeholder="4th Year" />
+                </label>
+                <input name="phone" defaultValue={selected.phone ?? ""} className={fieldClass} placeholder="Phone number" />
+                <div className="flex justify-end gap-2 border-t border-[#e3e7f0] pt-4">
+                  <button type="button" onClick={closeEditor} className="rounded-lg border border-[#e3e7f0] px-5 py-2.5 text-sm font-semibold">Cancel</button>
+                  <button disabled={saving} className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">Save changes</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         <FilterBar
           query={filters.query}
           onQueryChange={(value) => updateFilter("query", value)}
@@ -845,7 +1014,7 @@ const AdminConsolePage = ({ section }) => {
                     sortConfig={tableSort}
                     onSort={toggleTableSort}
                   />
-                  <th className="px-4 py-3">Action</th>
+                      <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e3e7f0]">
@@ -864,31 +1033,42 @@ const AdminConsolePage = ({ section }) => {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      {account.role === "admin" ? (
-                        <span className="text-xs font-semibold text-[#64748b]">
-                          {String(account._id) === String(user?._id)
-                            ? "Current account"
-                            : "Protected"}
-                        </span>
-                      ) : (
+                      <div className="flex flex-wrap gap-2">
                         <button
-                          onClick={() =>
-                            mutate(
-                              `/users/${account._id}/status`,
-                              {
-                                method: "PATCH",
-                                body: JSON.stringify({
-                                  isActive: !account.isActive,
-                                }),
-                              },
-                              `User ${account.isActive ? "deactivated" : "activated"}.`,
-                            )
-                          }
-                          className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${account.isActive ? "bg-red-50 text-red-700" : "border border-[#e3e7f0] text-[#0b1b46]"}`}
+                          onClick={() => {
+                            setSelected(account);
+                            setUserModalOpen(true);
+                          }}
+                          className="rounded-lg border border-[#e3e7f0] px-3 py-1.5 text-xs font-semibold text-[#0b1b46]"
                         >
-                          {account.isActive ? "Suspend" : "Reactivate"}
+                          Edit
                         </button>
-                      )}
+                        {account.role !== "admin" && (
+                          <button
+                            onClick={() =>
+                              mutate(
+                                `/users/${account._id}/status`,
+                                {
+                                  method: "PATCH",
+                                  body: JSON.stringify({ isActive: !account.isActive }),
+                                },
+                                `User ${account.isActive ? "deactivated" : "activated"}.`,
+                              )
+                            }
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${account.isActive ? "bg-red-50 text-red-700" : "border border-[#e3e7f0] text-[#0b1b46]"}`}
+                          >
+                            {account.isActive ? "Suspend" : "Reactivate"}
+                          </button>
+                        )}
+                        {String(account._id) !== String(user?._id) && (
+                          <button
+                            onClick={() => deleteUser(account)}
+                            className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -908,6 +1088,7 @@ const AdminConsolePage = ({ section }) => {
 
   return (
     <div className="w-full">
+      {confirmation}
       <StorePageHeader
         eyebrow={details.eyebrow}
         title={details.title}

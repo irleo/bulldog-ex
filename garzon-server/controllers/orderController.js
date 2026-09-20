@@ -4,6 +4,7 @@ import Order from "../models/orderModel.js";
 import Product from "../models/productModel.js";
 import { ApiError, asyncHandler } from "../middleware/errorHandlers.js";
 import { escapeRegex, parsePagination } from "../utils/query.js";
+import { numeric, validateBody } from '../utils/validation.js';
 
 const orderPopulation = [
   { path: "userId", select: "firstName lastName email phone" },
@@ -21,6 +22,7 @@ const allowedTransitions = {
 };
 
 const requireCompletedPickupProfile = (user) => {
+  validateBody('/users/me', 'PATCH', { phone: user.phone, address: user.address?.toObject() });
   const address = user.address;
   if (
     !user.phone ||
@@ -43,7 +45,7 @@ const adjustInventory = async (items, direction) => {
       const update = { $inc: { stock: direction * item.quantity } };
       const filter = {
         _id: item.productId,
-        ...(direction < 0 ? { stock: { $gte: item.quantity } } : {}),
+        ...(direction < 0 ? { stock: { $gte: item.quantity }, isActive: true } : {}),
       };
       const product = await Product.findOneAndUpdate(filter, update, {
         new: true,
@@ -80,12 +82,14 @@ export const createOrder = asyncHandler(async (request, response) => {
 
   const items = cart.items.map((item) => {
     const product = item.productId;
+    numeric(item.quantity, 'quantity', 1, 100, true);
     if (!product?.isActive || product.stock < item.quantity) {
       throw new ApiError(
         HttpStatus.CONFLICT,
         `${product?.name ?? "A product"} is unavailable in the requested quantity.`,
       );
     }
+    numeric(product.price, 'price', 0, 1000000, false);
     return {
       productId: product._id,
       productName: product.name,

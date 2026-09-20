@@ -73,6 +73,9 @@ const resolveCategoryId = async (rawCategory) => {
 
 export const createProduct = asyncHandler(async (request, response) => {
   const productData = selectProductFields(request.body);
+  if (!(await Category.exists({ _id: productData.categoryId, isActive: true }))) {
+    throw new ApiError(HttpStatus.BAD_REQUEST, 'Choose an existing active category.');
+  }
   if (request.file) {
     productData.images = [`/uploads/products/${request.file.filename}`];
   }
@@ -103,7 +106,11 @@ export const listProducts = asyncHandler(async (request, response) => {
     request.query.maxPrice,
     "maxPrice",
   );
+  /** @type {import('mongoose').QueryFilter<import('mongoose').InferSchemaType<typeof Product.schema>>} */
   const filter = { isActive: true };
+
+  // Keep sold-out inventory in the Admin list, but omit it from the storefront.
+  if (request.user?.role !== UserRole.ADMIN) filter.stock = { $gt: 0 };
 
   if (categoryId !== undefined) filter.categoryId = categoryId;
   if (request.user?.role === UserRole.ADMIN) {
@@ -184,6 +191,9 @@ export const getProduct = asyncHandler(async (request, response) => {
 
 export const updateProduct = asyncHandler(async (request, response) => {
   const productUpdates = selectProductFields(request.body);
+  if (productUpdates.categoryId !== undefined && !(await Category.exists({ _id: productUpdates.categoryId, isActive: true }))) {
+    throw new ApiError(HttpStatus.BAD_REQUEST, 'Choose an existing active category.');
+  }
   if (request.file) {
     productUpdates.images = [`/uploads/products/${request.file.filename}`];
   }

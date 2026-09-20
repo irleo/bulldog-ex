@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { HttpStatus } from "../config/constants.js";
+import { InputError } from '../utils/validation.js';
 
 export class ApiError extends Error {
   constructor(statusCode, message, details = null) {
@@ -16,11 +17,11 @@ export const asyncHandler = (handler) => (request, response, next) => {
 };
 
 /** Handles requests that do not match an API route. */
-export const notFoundHandler = (request, _response, next) => {
+export const notFoundHandler = (_request, _response, next) => {
   next(
     new ApiError(
       HttpStatus.NOT_FOUND,
-      `Route not found: ${request.method} ${request.originalUrl}`,
+      'The requested resource could not be found.',
     ),
   );
 };
@@ -32,16 +33,26 @@ export const serverErrorHandler = (error, _request, response, _next) => {
       ? error.statusCode
       : HttpStatus.INTERNAL_SERVER_ERROR;
   let message =
-    error instanceof Error ? error.message : "Unexpected server error.";
+    error instanceof ApiError ? error.message : "We couldn't complete your request. Please try again.";
   let details = error instanceof ApiError ? error.details : null;
 
-  if (error instanceof mongoose.Error.ValidationError) {
+  if (error instanceof InputError) {
+    statusCode = 400;
+    message = error.message;
+    details = error.fieldErrors;
+  } else if (error?.type === 'entity.parse.failed') {
+    statusCode = 400;
+    message = 'Please send a valid JSON request.';
+  } else if (error?.type === 'entity.too.large') {
+    statusCode = 413;
+    message = 'The submitted data is too large.';
+  } else if (error instanceof mongoose.Error.ValidationError) {
     statusCode = HttpStatus.BAD_REQUEST;
-    message = "Document validation failed.";
+    message = "Please check the submitted fields.";
     details = Object.fromEntries(
-      Object.entries(error.errors).map(([field, validationError]) => [
+      Object.keys(error.errors).map((field) => [
         field,
-        validationError.message,
+        `Please enter a valid ${field}.`,
       ]),
     );
   } else if (error instanceof mongoose.Error.CastError) {
@@ -50,10 +61,11 @@ export const serverErrorHandler = (error, _request, response, _next) => {
   } else if (error?.code === 11000) {
     statusCode = HttpStatus.CONFLICT;
     message = "A document with the same unique field already exists.";
-    details = error.keyValue ?? null;
+    message = 'That email, SKU, or unique record is already in use.';
+    details = null;
   } else if (error instanceof mongoose.Error.StrictModeError) {
     statusCode = HttpStatus.BAD_REQUEST;
-    message = error.message;
+    message = 'The request contains an unsupported field.';
   }
 
   response.status(statusCode).json({
@@ -63,9 +75,6 @@ export const serverErrorHandler = (error, _request, response, _next) => {
     data: null,
     error: {
       ...(details ? { details } : {}),
-      ...(process.env.NODE_ENV === "development" && error instanceof Error
-        ? { stack: error.stack }
-        : {}),
     },
   });
 };

@@ -64,10 +64,11 @@ export const addCartItem = asyncHandler(async (request, response) => {
     (item) => String(item.productId) === productId,
   );
   if (existingItem) {
-    const nextQuantity = existingItem.quantity + quantity;
+    const nextQuantity = parseQuantity(existingItem.quantity + quantity);
     await requireAvailableProduct(productId, nextQuantity);
     existingItem.quantity = nextQuantity;
   } else {
+    if (cart.items.length >= 100) throw new ApiError(HttpStatus.BAD_REQUEST, 'A cart can contain at most 100 different products.');
     cart.items.push({ productId, quantity });
   }
 

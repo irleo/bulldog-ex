@@ -1,3 +1,4 @@
+import { validateRequest } from '../middleware/validationMiddleware.js';
 import { Router } from 'express';
 import { UserRole } from '../config/constants.js';
 import {
@@ -12,6 +13,7 @@ import { authenticate } from '../middleware/authentication.js';
 import { authorize } from '../middleware/authorization.js';
 
 const router = Router();
+router.use(validateRequest);
 
 router.get('/', listCategories);
 router.post('/', authenticate, authorize(UserRole.ADMIN), createCategory);

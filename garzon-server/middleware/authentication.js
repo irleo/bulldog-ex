@@ -9,9 +9,9 @@ import { verifyAccessToken } from '../utils/token.js';
  */
 export const authenticate = asyncHandler(async (request, _response, next) => {
   const authorizationHeader = request.get('authorization') ?? '';
-  const [scheme, token] = authorizationHeader.split(' ');
+  const [scheme, token, extra] = authorizationHeader.split(' ');
 
-  if (scheme !== 'Bearer' || !token) {
+  if (scheme !== 'Bearer' || !token || extra || authorizationHeader.length > 8192) {
     throw new ApiError(HttpStatus.UNAUTHORIZED, 'Authentication is required.');
   }
 
@@ -27,8 +27,11 @@ export const authenticate = asyncHandler(async (request, _response, next) => {
     );
   }
 
+  if (typeof payload !== 'object' || typeof payload.sub !== 'string' || !/^[a-f\d]{24}$/i.test(payload.sub)) {
+    throw new ApiError(HttpStatus.UNAUTHORIZED, 'The authentication token is invalid.');
+  }
   const user = await User.findById(payload.sub).select(
-    'firstName lastName email role phone address isActive',
+    'firstName lastName studentNumber course yearLevel email role phone address isActive',
   );
 
   if (!user) {

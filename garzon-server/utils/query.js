@@ -1,17 +1,18 @@
 import { HttpStatus } from '../config/constants.js';
 import { ApiError } from '../middleware/errorHandlers.js';
+import { numeric, text } from './validation.js';
 
 /** @param {unknown} value */
 export const escapeRegex = (value) =>
-  String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  text(value, 'search', 0, 120).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * @param {unknown} rawPage
  * @param {unknown} rawLimit
  */
 export const parsePagination = (rawPage, rawLimit) => {
-  const page = Number.parseInt(String(rawPage ?? '1'), 10);
-  const limit = Number.parseInt(String(rawLimit ?? '20'), 10);
+  const page = numeric(rawPage ?? 1, 'page', 1, 100000, true, true);
+  const limit = numeric(rawLimit ?? 20, 'limit', 1, 100, true, true);
 
   if (!Number.isInteger(page) || page < 1) {
     throw new ApiError(HttpStatus.BAD_REQUEST, 'page must be a positive integer.');

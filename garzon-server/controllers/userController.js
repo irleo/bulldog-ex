@@ -10,30 +10,41 @@ import {
   parsePagination,
 } from "../utils/query.js";
 import { selectFields } from "../utils/selectFields.js";
+import { findAttempt, recordFailure, resetFailures } from '../models/userModel.js';
+import { remainingCooldown, sendLoginCooldown } from '../middleware/rateLimiterMiddleware.js';
 
 const registrationFields = [
   "firstName",
   "lastName",
+  "studentNumber",
+  "course",
+  "yearLevel",
   "email",
   "phone",
   "address",
 ];
-const profileFields = ["firstName", "lastName", "phone", "address"];
+const profileFields = ["firstName", "lastName", "studentNumber", "course", "yearLevel", "phone", "address"];
 const adminEditableFields = [
   "firstName",
   "lastName",
+  "studentNumber",
+  "course",
+  "yearLevel",
   "email",
   "phone",
   "address",
 ];
 const userProjection =
-  "firstName lastName email role phone address isActive createdAt updatedAt";
+  "firstName lastName studentNumber course yearLevel email role phone address isActive createdAt updatedAt";
 
 export const serializeUser = (user) => ({
   _id: user._id,
   firstName: user.firstName,
   lastName: user.lastName,
   fullName: user.fullName,
+  studentNumber: user.studentNumber,
+  course: user.course,
+  yearLevel: user.yearLevel,
   email: user.email,
   role: user.role,
   phone: user.phone,
@@ -77,10 +88,14 @@ export const login = asyncHandler(async (request, response) => {
   }
 
   const user = await User.findOne({ email }).select("+passwordHash");
+
   const passwordMatches = user
     ? await bcrypt.compare(password, user.passwordHash)
     : false;
   if (!user || !passwordMatches) {
+    const state = await recordFailure(email, new Date());
+    const seconds = remainingCooldown(state, Date.now());
+    if (seconds) return sendLoginCooldown(response, seconds);
     throw new ApiError(
       HttpStatus.UNAUTHORIZED,
       "Email or password is incorrect.",
@@ -89,6 +104,12 @@ export const login = asyncHandler(async (request, response) => {
   if (!user.isActive) {
     throw new ApiError(HttpStatus.FORBIDDEN, "This account is inactive.");
   }
+
+  await resetFailures(email, new Date());
+  const seconds = remainingCooldown(await findAttempt(email), Date.now());
+  if (seconds) return sendLoginCooldown(response, seconds);
+  // Associate the successful sign-in with the completed request's audit entry.
+  request.user = user;
 
   response.status(HttpStatus.OK).json({
     success: true,
@@ -171,7 +192,7 @@ export const changeMyPassword = asyncHandler(async (request, response) => {
     );
   }
 
-  user.passwordHash = newPassword;
+  user.passwordHash = await bcrypt.hash(newPassword, 12);
   await user.save();
 
   response.status(HttpStatus.OK).json({
@@ -255,6 +276,9 @@ export const getUser = asyncHandler(async (request, response) => {
 
 export const updateUser = asyncHandler(async (request, response) => {
   assertUserCanAccessTarget(request, request.params.id);
+  if (request.user.role !== UserRole.ADMIN && request.body.email !== undefined) {
+    throw new ApiError(HttpStatus.FORBIDDEN, 'Email changes on this route require an administrator.');
+  }
 
   const fields =
     request.user.role === UserRole.ADMIN

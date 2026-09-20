@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "../../api/apiClient.js";
 import { notify } from "../../utils/toast.js";
 import {
+  useConfirmation,
+  useUnsavedForm,
   StatusPill,
   StoreCard,
   StoreIcon,
@@ -24,6 +26,8 @@ const stepLabels = {
 const ReviewStars = ({ rating }) => <span className="flex gap-0.5" aria-label={`${rating} out of 5 stars`}>{[1, 2, 3, 4, 5].map((value) => <StoreIcon key={value} name="star" className={`h-3.5 w-3.5 ${value <= Number(rating) ? "fill-[#d4af37] text-[#d4af37]" : "text-[#d7dce7]"}`} />)}</span>;
 
 const OrdersPage = () => {
+  const { confirm, confirmation } = useConfirmation();
+  const { formRef, onFormChange, markSaved, guardDiscard } = useUnsavedForm(confirm);
   const [activeTab, setActiveTab] = useState("orders");
   const [orders, setOrders] = useState([]);
   const [orderPage, setOrderPage] = useState(1);
@@ -33,8 +37,6 @@ const OrdersPage = () => {
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
-  const [orderToCancel, setOrderToCancel] = useState(null);
-  const [cancelling, setCancelling] = useState(false);
   const [reviewOrder, setReviewOrder] = useState(null);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -70,43 +72,39 @@ const OrdersPage = () => {
   const selectedStatus = String(selected?.status || "pending");
   const currentStep = steps.indexOf(selectedStatus);
 
-  const claimSelectedOrder = async () => {
+  const claimSelectedOrder = () => {
     if (!selected || selectedStatus !== "ready_for_claiming") return;
-    setClaiming(true);
-    try {
-      const payload = await apiRequest(`/orders/${selected._id}/claim`, { method: "PATCH" });
-      setOrders((current) => current.map((order) => order._id === payload.data._id ? payload.data : order));
-      notify.success("Order marked as claimed.");
-      setReviewOrder(payload.data);
-    } catch (requestError) {
-      notify.error(requestError.message);
-    } finally {
-      setClaiming(false);
-    }
+    const order = selected;
+    confirm({ title: `Complete order ${order.orderNumber}?`,
+      message: "Confirm that you have received this order. Marking it as claimed completes the order and cannot be undone.",
+      confirmLabel: "Mark as claimed", onConfirm: async () => {
+        setClaiming(true);
+        try {
+          const payload = await apiRequest(`/orders/${order._id}/claim`, { method: "PATCH" });
+          setOrders((current) => current.map((entry) => entry._id === payload.data._id ? payload.data : entry));
+          notify.success("Order marked as claimed.");
+          setReviewOrder(payload.data);
+        } finally { setClaiming(false); }
+      },
+    });
   };
 
-  const cancelPendingOrder = async () => {
-    if (!orderToCancel || orderToCancel.status !== "pending") return;
-    setCancelling(true);
-    try {
-      const payload = await apiRequest(
-        `/orders/${orderToCancel._id}/cancel`,
-        { method: "PATCH" },
-      );
-      setOrders((current) =>
-        current.map((order) =>
-          order._id === payload.data._id ? payload.data : order,
-        ),
-      );
-      setOrderToCancel(null);
-      notify.success("Order cancelled successfully.");
-    } catch (requestError) {
-      notify.error(requestError.message);
-    } finally {
-      setCancelling(false);
-    }
+  const cancelPendingOrder = (order) => {
+    if (order.status !== "pending") return;
+    confirm({ title: `Cancel order ${order.orderNumber}?`,
+      message: "This will permanently cancel your pending order. The cancellation cannot be undone.",
+      cancelLabel: "Keep order", confirmLabel: "Cancel order", destructive: true,
+      onConfirm: async () => {
+        const payload = await apiRequest(`/orders/${order._id}/cancel`, { method: "PATCH" });
+        setOrders((current) => current.map((entry) => entry._id === payload.data._id ? payload.data : entry));
+        notify.success("Order cancelled successfully.");
+      },
+    });
   };
 
+  const closeReview = () => {
+    if (!reviewSubmitting) guardDiscard(() => setReviewOrder(null));
+  };
   const submitOrderReview = async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -121,6 +119,7 @@ const OrdersPage = () => {
         }),
       });
       setReviews((current) => [payload.data, ...current]);
+      markSaved();
       setReviewOrder(null);
       setActiveTab("reviews");
       notify.success("Review submitted.");
@@ -133,69 +132,19 @@ const OrdersPage = () => {
 
   return (
     <StorePage>
-      {orderToCancel && (
-        <div
-          className="fixed inset-0 z-[70] grid place-items-center bg-[#071230]/55 p-4 backdrop-blur-sm"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !cancelling) {
-              setOrderToCancel(null);
-            }
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cancel-order-title"
-            className="w-full max-w-md overflow-hidden rounded-2xl border border-[#e3e7f0] bg-white shadow-2xl"
-          >
-            <div className="p-6">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-700">
-                Cancel order
-              </p>
-              <h2
-                id="cancel-order-title"
-                className="font-display mt-1 text-lg font-extrabold"
-              >
-                Cancel {orderToCancel.orderNumber}?
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-[#64748b]">
-                This can only be done while the order is still pending.
-              </p>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-[#e3e7f0] bg-[#f8f9fc] px-6 py-4">
-              <button
-                type="button"
-                disabled={cancelling}
-                onClick={() => setOrderToCancel(null)}
-                className="rounded-lg border border-[#e3e7f0] bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-              >
-                Keep order
-              </button>
-              <button
-                type="button"
-                disabled={cancelling}
-                onClick={cancelPendingOrder}
-                className="rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {cancelling ? "Cancelling…" : "Cancel order"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmation}
       {reviewOrder && (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#071230]/55 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setReviewOrder(null)}>
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#071230]/55 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeReview()}>
           <div role="dialog" aria-modal="true" aria-labelledby="review-dialog-title" className="w-full max-w-lg overflow-hidden rounded-2xl border border-[#e3e7f0] bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-[#e3e7f0] px-6 py-5">
               <div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a9841f]">Order claimed</p><h2 id="review-dialog-title" className="font-display mt-1 text-lg font-extrabold">Review your purchase</h2><p className="mt-1 text-xs text-[#64748b]">{reviewOrder.orderNumber}</p></div>
-              <button type="button" onClick={() => setReviewOrder(null)} className="grid h-9 w-9 place-items-center rounded-lg border border-[#e3e7f0] text-[#64748b]" aria-label="Close review form"><StoreIcon name="close" className="h-4 w-4" /></button>
+              <button type="button" onClick={closeReview} className="grid h-9 w-9 place-items-center rounded-lg border border-[#e3e7f0] text-[#64748b]" aria-label="Close review form"><StoreIcon name="close" className="h-4 w-4" /></button>
             </div>
-            <form onSubmit={submitOrderReview} className="grid gap-4 p-6">
+            <form ref={formRef} onChange={onFormChange} onSubmit={submitOrderReview} className="grid gap-4 p-6">
               <label><span className="mb-1.5 block text-xs font-semibold text-[#64748b]">Product</span><select name="productId" required className="w-full rounded-lg border border-[#e3e7f0] p-2.5 text-sm">{reviewOrder.items?.filter((item) => item.productId?._id).map((item) => <option key={item.productId._id} value={item.productId._id}>{item.productName}</option>)}</select></label>
               <label><span className="mb-1.5 block text-xs font-semibold text-[#64748b]">Rating</span><select name="rating" required defaultValue="5" className="w-full rounded-lg border border-[#e3e7f0] p-2.5 text-sm">{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
               <label><span className="mb-1.5 block text-xs font-semibold text-[#64748b]">Review</span><textarea name="content" required minLength="10" maxLength="1000" rows="4" className="w-full resize-none rounded-lg border border-[#e3e7f0] p-3 text-sm outline-none focus:border-[#d4af37]" placeholder="Share your experience with this product…" /></label>
-              <div className="flex justify-end gap-2 border-t border-[#e3e7f0] pt-4"><button type="button" onClick={() => setReviewOrder(null)} className="rounded-lg border border-[#e3e7f0] px-4 py-2.5 text-sm font-semibold">Not now</button><button disabled={reviewSubmitting} className="rounded-lg bg-[#0b1b46] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{reviewSubmitting ? "Submitting…" : "Submit review"}</button></div>
+              <div className="flex justify-end gap-2 border-t border-[#e3e7f0] pt-4"><button type="button" onClick={closeReview} className="rounded-lg border border-[#e3e7f0] px-4 py-2.5 text-sm font-semibold">Not now</button><button disabled={reviewSubmitting} className="rounded-lg bg-[#0b1b46] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{reviewSubmitting ? "Submitting…" : "Submit review"}</button></div>
             </form>
           </div>
         </div>
@@ -332,7 +281,7 @@ const OrdersPage = () => {
             {selectedStatus === "pending" && (
               <button
                 type="button"
-                onClick={() => setOrderToCancel(selected)}
+                onClick={() => cancelPendingOrder(selected)}
                 className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100"
               >
                 <StoreIcon name="close" className="h-4 w-4" />

@@ -1,6 +1,224 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Link, useBlocker } from "react-router-dom";
 import studyKit from "../assets/img/daily_essentials.png";
+
+/** @typedef {{title: string, message: string, confirmLabel: string, cancelLabel?: string, destructive?: boolean, onConfirm: () => unknown | Promise<unknown>, onCancel?: () => void}} ConfirmationOptions */
+
+/** @param {{options: ConfirmationOptions, onClose: (confirmed: boolean) => void}} props */
+const ConfirmationDialog = ({ options, onClose }) => {
+  const dialog = useRef(/** @type {HTMLDialogElement|null} */ (null));
+  const inFlight = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const titleId = useId();
+  const descriptionId = useId();
+
+  useEffect(() => {
+    const element = dialog.current;
+    const previousFocus = document.activeElement;
+    element.showModal();
+    return () => {
+      element.close();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
+        previousFocus.focus();
+    };
+  }, []);
+
+  const cancel = () => {
+    if (inFlight.current) return;
+    options.onCancel?.();
+    onClose(false);
+  };
+  const submit = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    setError("");
+    try {
+      const result = await options.onConfirm();
+      if (result === false)
+        throw new Error("The action could not be completed. Please try again.");
+      onClose(true);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "The action could not be completed. Please try again.",
+      );
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
+  };
+
+  return (
+    <dialog
+      ref={dialog}
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      aria-busy={pending}
+      onCancel={(event) => {
+        event.preventDefault();
+        cancel();
+      }}
+      className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-2xl border border-[#e3e7f0] bg-white p-0 text-[#101828] shadow-2xl backdrop:bg-[#071230]/55 backdrop:backdrop-blur-sm"
+    >
+      <div className="p-6">
+        <h2 id={titleId} className="font-display text-lg font-extrabold">
+          {options.title}
+        </h2>
+        <p
+          id={descriptionId}
+          className="mt-2 whitespace-pre-line text-sm leading-6 text-[#64748b]"
+        >
+          {options.message}
+        </p>
+        {error && (
+          <p
+            role="alert"
+            className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700"
+          >
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="flex justify-end gap-2 border-t border-[#e3e7f0] bg-[#f8f9fc] px-6 py-4">
+        <button
+          type="button"
+          autoFocus
+          disabled={pending}
+          onClick={cancel}
+          className="rounded-lg border border-[#e3e7f0] bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
+        >
+          {options.cancelLabel ?? "Cancel"}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={submit}
+          className={`rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 ${options.destructive ? "bg-red-700" : "bg-[#0b1b46]"}`}
+        >
+          {pending ? "Processing…" : options.confirmLabel}
+        </button>
+      </div>
+    </dialog>
+  );
+};
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const useConfirmation = () => {
+  const [options, setOptions] = useState(
+    /** @type {ConfirmationOptions|null} */ (null),
+  );
+  const opened = useRef(false);
+  const resolve = useRef(/** @type {((confirmed: boolean) => void)|null} */ (null));
+  const confirm = useCallback(
+    /** @param {ConfirmationOptions} next */ (next) => {
+      if (opened.current) return Promise.resolve(false);
+      opened.current = true;
+      return new Promise((done) => { resolve.current = done; setOptions(next); });
+    },
+    [],
+  );
+  const close = useCallback((confirmed) => {
+    opened.current = false;
+    setOptions(null);
+    resolve.current?.(confirmed);
+    resolve.current = null;
+  }, []);
+  useEffect(() => () => { resolve.current?.(false); }, []);
+  return {
+    confirm,
+    confirmation: options && (
+      <ConfirmationDialog options={options} onClose={close} />
+    ),
+  };
+};
+
+/** @param {HTMLFormElement} form */
+const formSnapshot = (form) =>
+  JSON.stringify(
+    Array.from(new FormData(form), ([key, value]) => [
+      key,
+      value instanceof File
+        ? (value.name ? [value.name, value.size, value.lastModified] : null)
+        : value,
+    ]),
+  );
+
+/** @param {(options: ConfirmationOptions) => void} confirm */
+// eslint-disable-next-line react-refresh/only-export-components
+export const useUnsavedForm = (confirm) => {
+  const form = useRef(/** @type {HTMLFormElement|null} */ (null));
+  const baseline = useRef("");
+  const dirty = useRef(false);
+  const formRef = useCallback(
+    /** @param {HTMLFormElement|null} element */ (element) => {
+      form.current = element;
+      if (element) {
+        baseline.current = formSnapshot(element);
+        dirty.current = false;
+      }
+    },
+    [],
+  );
+  const onFormChange = useCallback(() => {
+    if (form.current)
+      dirty.current = formSnapshot(form.current) !== baseline.current;
+  }, []);
+  const markSaved = useCallback(() => {
+    dirty.current = false;
+    if (form.current) baseline.current = formSnapshot(form.current);
+  }, []);
+  const guardDiscard = useCallback(
+    /** @param {() => void} action */ (action) => {
+      if (!dirty.current) {
+        action();
+        return;
+      }
+      confirm({
+        title: "Discard changes?",
+        message:
+          "You have unsaved changes. Leaving this form will permanently discard those edits.",
+        cancelLabel: "Stay",
+        confirmLabel: "Discard changes",
+        destructive: true,
+        onConfirm: () => {
+          markSaved();
+          action();
+        },
+      });
+    },
+    [confirm, markSaved],
+  );
+  const blocker = useBlocker(useCallback(() => dirty.current, []));
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    confirm({
+      title: "Discard changes?",
+      message:
+        "You have unsaved changes. Leaving this page will permanently discard those edits.",
+      cancelLabel: "Stay",
+      confirmLabel: "Discard changes",
+      destructive: true,
+      onCancel: () => blocker.reset(),
+      onConfirm: () => {
+        markSaved();
+        blocker.proceed();
+      },
+    });
+  }, [blocker, confirm, markSaved]);
+  useEffect(() => {
+    const warn = (event) => {
+      if (!dirty.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+  return { formRef, onFormChange, markSaved, guardDiscard };
+};
 
 const apiBaseUrl =
   import.meta.env.VITE_API_URL ?? "http://localhost:5000/api/v1";
@@ -10,31 +228,45 @@ const resolveImageSource = (source) =>
   source?.startsWith("/uploads/") ? `${serverOrigin}${source}` : source;
 
 const getLocalProductImage = (product) => {
-  const searchable = `${product?.sku ?? ""} ${product?.name ?? ""}`.toLowerCase();
+  const searchable =
+    `${product?.sku ?? ""} ${product?.name ?? ""}`.toLowerCase();
   if (searchable.includes("scarf")) return "/products/nu_scarf_v2.png";
   if (searchable.includes("hoodie")) return "/products/nu_hoodie.png";
-  if (searchable.includes("sweatshirt") || searchable.includes("sweat shirt")) return "/products/nu_sweatshirt.png";
-  if (searchable.includes("varsity") || searchable.includes("jacket")) return "/products/nu_varsity_jacket.png";
+  if (searchable.includes("sweatshirt") || searchable.includes("sweat shirt"))
+    return "/products/nu_sweatshirt.png";
+  if (searchable.includes("varsity") || searchable.includes("jacket"))
+    return "/products/nu_varsity_jacket.png";
   if (searchable.includes("cap")) return "/products/nu_est_cap.png";
   if (searchable.includes("baller")) return "/products/nu_baller.png";
-  if (searchable.includes("study") || searchable.includes("-stu-")) return studyKit;
-  if (searchable.includes("v2") || searchable.includes("app-002")) return "/products/nu_athletic_v2_tshirt.png";
+  if (searchable.includes("study") || searchable.includes("-stu-"))
+    return studyKit;
+  if (searchable.includes("v2") || searchable.includes("app-002"))
+    return "/products/nu_athletic_v2_tshirt.png";
   if (searchable.includes("-acc-")) return "/products/nu_scarf_v2.png";
   return "/products/nu_athletic_v1_tshirt.png";
 };
 
-export const ProductImage = ({ product, className = "", alt = product?.name ?? "Product" }) => {
+export const ProductImage = ({
+  product,
+  className = "",
+  alt = product?.name ?? "Product",
+}) => {
   const fallback = getLocalProductImage(product);
   const savedSource = resolveImageSource(
-    product?.images?.find(
-      (image) => typeof image === "string" && image.trim(),
-    ),
+    product?.images?.find((image) => typeof image === "string" && image.trim()),
   );
   const [source, setSource] = useState(savedSource || fallback);
 
   useEffect(() => setSource(savedSource || fallback), [fallback, savedSource]);
 
-  return <img src={source} alt={alt} className={className} onError={() => source !== fallback && setSource(fallback)} />;
+  return (
+    <img
+      src={source}
+      alt={alt}
+      className={className}
+      onError={() => source !== fallback && setSource(fallback)}
+    />
+  );
 };
 
 const buttonVariants = {
@@ -43,9 +275,24 @@ const buttonVariants = {
   outline: "border-[#e3e7f0] bg-transparent text-[#0b1b46] hover:bg-[#eef1f8]",
 };
 
-export const Button = ({ children, to, type = "button", variant = "secondary", className = "" }) => {
-  const classes = `font-body inline-flex items-center justify-center rounded-lg border px-4 py-2.5 text-sm font-semibold transition ${buttonVariants[variant] ?? buttonVariants.secondary} ${className}`.trim();
-  return to ? <Link to={to} className={classes}>{children}</Link> : <button type={type} className={classes}>{children}</button>;
+export const Button = ({
+  children,
+  to,
+  type = "button",
+  variant = "secondary",
+  className = "",
+}) => {
+  const classes =
+    `font-body inline-flex items-center justify-center rounded-lg border px-4 py-2.5 text-sm font-semibold transition ${buttonVariants[variant] ?? buttonVariants.secondary} ${className}`.trim();
+  return to ? (
+    <Link to={to} className={classes}>
+      {children}
+    </Link>
+  ) : (
+    <button type={type} className={classes}>
+      {children}
+    </button>
+  );
 };
 
 export const PasswordInput = ({ className = "", ...inputProps }) => {

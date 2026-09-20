@@ -46,10 +46,11 @@ const AuthProvider = ({ children }) => {
         try {
           if (getStoredToken())
             await apiRequest("/users/logout", { method: "POST" });
-        } finally {
-          clearStoredToken();
-          setUser(null);
+        } catch (error) {
+          if (error.status !== 401) throw error;
         }
+        clearStoredToken();
+        setUser(null);
       },
       refreshUser: async () => {
         const payload = await apiRequest("/users/me/session");

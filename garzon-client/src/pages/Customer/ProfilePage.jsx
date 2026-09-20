@@ -3,6 +3,8 @@ import { apiRequest } from "../../api/apiClient.js";
 import { useAuth } from "../../auth/authContext.js";
 import { notify } from "../../utils/toast.js";
 import {
+  useConfirmation,
+  useUnsavedForm,
   PasswordInput,
   StoreCard,
   StoreIcon,
@@ -15,19 +17,25 @@ const fieldClass =
 
 const ProfilePage = () => {
   const { user, refreshUser } = useAuth();
+  const { confirm, confirmation } = useConfirmation();
+  const { formRef, onFormChange, markSaved, guardDiscard } = useUnsavedForm(confirm);
   const [tab, setTab] = useState("info");
   const initials =
     `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase();
 
   const updateProfile = async (event) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     try {
       await apiRequest("/users/me", {
         method: "PATCH",
         body: JSON.stringify({
           firstName: form.get("firstName"),
           lastName: form.get("lastName"),
+          studentNumber: form.get("studentNumber") || undefined,
+          course: form.get("course") || undefined,
+          yearLevel: form.get("yearLevel") || undefined,
           phone: form.get("phone"),
           address: {
             street: form.get("street"),
@@ -37,6 +45,7 @@ const ProfilePage = () => {
           },
         }),
       });
+      markSaved();
       await refreshUser();
       notify.success("Profile updated successfully.");
     } catch (requestError) {
@@ -46,7 +55,8 @@ const ProfilePage = () => {
 
   const changePassword = async (event) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const newPassword = String(form.get("newPassword") ?? "");
     const confirmPassword = String(form.get("confirmPassword") ?? "");
     if (newPassword !== confirmPassword) {
@@ -61,7 +71,8 @@ const ProfilePage = () => {
           newPassword,
         }),
       });
-      event.currentTarget.reset();
+      formElement.reset();
+      markSaved();
       notify.success("Password changed successfully.");
     } catch (requestError) {
       notify.error(requestError.message);
@@ -70,6 +81,7 @@ const ProfilePage = () => {
 
   return (
     <StorePage className="mx-auto max-w-4xl">
+      {confirmation}
       <StorePageHeader
         eyebrow="Account"
         title="Your profile"
@@ -82,7 +94,7 @@ const ProfilePage = () => {
         ].map(([key, label]) => (
           <button
             key={key}
-            onClick={() => setTab(key)}
+            onClick={() => key !== tab && guardDiscard(() => setTab(key))}
             className={`rounded-full px-4 py-2 text-xs font-semibold ${tab === key ? "bg-[#0b1b46] text-white" : "border border-[#e3e7f0] bg-white text-[#101828]"}`}
           >
             {label}
@@ -91,7 +103,7 @@ const ProfilePage = () => {
       </div>
       <StoreCard className="p-6">
         {tab === "info" ? (
-          <form onSubmit={updateProfile}>
+          <form key="info" ref={formRef} onChange={onFormChange} onSubmit={updateProfile}>
             <div className="mb-6 flex items-center gap-4">
               <span className="font-display grid h-16 w-16 place-items-center rounded-full bg-[#0b1b46] text-lg font-extrabold text-[#d4af37]">
                 {initials}
@@ -123,6 +135,18 @@ const ProfilePage = () => {
                   defaultValue={user.lastName}
                   className={`${fieldClass} mt-1 normal-case tracking-normal text-[#101828]`}
                 />
+              </label>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">
+                Student number
+                <input name="studentNumber" type="text" required={user.role === "customer" || Boolean(user.studentNumber)} pattern="[0-9]{4}[-][0-9]{6}" minLength="11" maxLength="11" defaultValue={user.studentNumber ?? ""} placeholder="2023-123456" title="Use the format ####-######" className={`${fieldClass} mt-1 normal-case tracking-normal text-[#101828]`} />
+              </label>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">
+                Course
+                <input name="course" required={user.role === "customer" || Boolean(user.course)} minLength="2" maxLength="120" defaultValue={user.course ?? ""} placeholder="BSIT" className={`${fieldClass} mt-1 normal-case tracking-normal text-[#101828]`} />
+              </label>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">
+                Year level
+                <input name="yearLevel" required={user.role === "customer" || Boolean(user.yearLevel)} minLength="1" maxLength="30" defaultValue={user.yearLevel ?? ""} placeholder="4th Year" className={`${fieldClass} mt-1 normal-case tracking-normal text-[#101828]`} />
               </label>
               <label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">
                 Email
@@ -186,7 +210,7 @@ const ProfilePage = () => {
             </button>
           </form>
         ) : (
-          <form onSubmit={changePassword} className="max-w-sm space-y-4">
+          <form key="password" ref={formRef} onChange={onFormChange} onSubmit={changePassword} className="max-w-sm space-y-4">
             <h2 className="font-display text-sm font-bold">
               Update your password
             </h2>

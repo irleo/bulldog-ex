@@ -54,10 +54,10 @@ const AuthLayout = () => (
           </p>
         </div>
       </aside>
-      <main className="relative flex min-h-screen items-center overflow-hidden px-5 py-8 sm:px-10 lg:min-h-0 lg:px-12 lg:py-8 xl:px-20">
+      <main className="relative flex min-h-screen items-start overflow-y-auto px-5 py-8 sm:px-10 lg:min-h-0 lg:px-12 lg:py-8 xl:px-20">
         <div className="absolute -right-28 -top-28 h-80 w-80 rounded-full bg-[var(--color-primary-soft)]/70 blur-3xl" />
         <div className="absolute -bottom-40 left-0 h-96 w-96 rounded-full bg-[#f1d36d]/20 blur-3xl" />
-        <div className="relative mx-auto w-full max-w-[33rem]">
+        <div className="relative mx-auto my-auto w-full max-w-[33rem] shrink-0">
           <div className="mb-7 flex items-center justify-between lg:hidden">
             <Link
               to="/"
