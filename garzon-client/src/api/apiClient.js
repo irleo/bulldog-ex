@@ -17,6 +17,7 @@ export const storeToken = (token, remember = false) => {
 export const clearStoredToken = () => {
   sessionStorage.removeItem(tokenKey);
   localStorage.removeItem(tokenKey);
+  window.dispatchEvent(new Event("session-ended"));
 };
 
 export const apiRequest = async (path, options = {}) => {
@@ -64,7 +65,7 @@ export const apiRequest = async (path, options = {}) => {
   }
 
   if (!response.ok) {
-    if (response.status === 401) clearStoredToken();
+    if (response.status === 401 && token && getStoredToken() === token && path !== "/users/login") clearStoredToken();
     const error = new Error(response.status >= 500 ? "We couldn't complete your request. Please try again." : (payload.message ?? 'The request failed.'));
     error.status = response.status;
     error.details = payload.error?.details;

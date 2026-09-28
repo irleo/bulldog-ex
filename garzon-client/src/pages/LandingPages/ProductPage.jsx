@@ -1,3 +1,4 @@
+import { isPrice, isStock } from "../../utils/numbers.js";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest } from "../../api/apiClient.js";
@@ -92,18 +93,18 @@ const ProductPage = () => {
             {product.name}
           </h1>
           <div className="mt-2 flex items-center gap-2">
-            <Stars rating={product.averageRating ?? 0} />
+            {product.reviewCount > 0 ? <Stars rating={product.averageRating} /> : <span>No ratings yet</span>}
             <span className="text-sm text-[#64748b]">
-              {reviews.length} review{reviews.length === 1 ? "" : "s"}
+              {product.reviewCount ?? reviews.length} review{product.reviewCount === 1 ? "" : "s"}
             </span>
           </div>
           <p className="font-display mt-4 text-3xl font-extrabold text-[#0b1b46]">
-            {peso.format(product.price)}
+            {isPrice(product.price) ? peso.format(product.price) : "Unavailable"}
           </p>
           <p
             className={`mt-1 text-sm ${product.stock > 10 ? "text-green-700" : "text-amber-700"}`}
           >
-            {product.stock > 10
+            {!isStock(product.stock) || product.stock === 0 ? "Sold out" : product.stock > 10
               ? `In stock — ${product.stock} available`
               : `Low stock — only ${product.stock} left`}
           </p>
@@ -117,6 +118,7 @@ const ProductPage = () => {
                 <button
                   onClick={() => setQuantity((value) => Math.max(1, value - 1))}
                   className="grid h-10 w-9 place-items-center"
+                  disabled={quantity <= 1 || !isStock(product.stock) || product.stock < 1}
                   aria-label="Decrease quantity"
                 >
                   <StoreIcon name="minus" className="h-4 w-4" />
@@ -126,9 +128,10 @@ const ProductPage = () => {
                 </span>
                 <button
                   onClick={() =>
-                    setQuantity((value) => Math.min(product.stock, value + 1))
+                    setQuantity((value) => Math.max(1, Math.min(100, product.stock, value + 1)))
                   }
                   className="grid h-10 w-9 place-items-center"
+                  disabled={!isStock(product.stock) || quantity >= Math.min(100, product.stock)}
                   aria-label="Increase quantity"
                 >
                   <StoreIcon name="plus" className="h-4 w-4" />
@@ -138,7 +141,7 @@ const ProductPage = () => {
             {user?.role === "customer" ? (
               <button
                 onClick={addToCart}
-                disabled={product.stock < 1}
+                disabled={!isPrice(product.price) || !isStock(product.stock) || product.stock < 1 || quantity > Math.min(100, product.stock)}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#0b1b46] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
               >
                 <StoreIcon name="cart" className="h-4 w-4" />

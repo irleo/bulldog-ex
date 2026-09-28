@@ -1,12 +1,14 @@
 // @ts-check
+import { RequestQuotaStore } from "../utils/requestQuotaStore.js";
 import { rateLimit } from "express-rate-limit";
-import * as attempts from "../models/userModel.js";
+import * as attempts from "../models/loginAttemptModel.js";
 
 /** @param {number} limit @param {number} windowMs @param {string} message */
 export function createRequestLimiter(limit, windowMs, message) {
   return rateLimit({
     limit,
     windowMs,
+    store: new RequestQuotaStore(windowMs, `quota-${limit}-${windowMs}`),
     standardHeaders: "draft-8",
     legacyHeaders: false,
     handler: (_request, response) => {
@@ -57,7 +59,7 @@ export const mutationLimiter = (request, response, next) => {
   next();
 };
 
-/** @param {import('../models/userModel.js').AttemptState|null} state @param {number} now */
+/** @param {import('../models/loginAttemptModel.js').AttemptState|null} state @param {number} now */
 export function remainingCooldown(state, now) {
   if (!state || (state.loginFailuresExpireAt?.getTime() ?? 0) <= now) return 0;
   return Math.max(

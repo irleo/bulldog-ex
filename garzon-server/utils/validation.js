@@ -1,3 +1,4 @@
+// @ts-check
 // Authoritative API input validation, independent of the client.
 /** @extends {Error} */
 export class InputError extends Error {
@@ -8,9 +9,9 @@ export class InputError extends Error {
   }
 }
 /** @param {string} field @param {string} message @returns {never} */
-const fail = (field, message) => {
+function fail(field, message) {
   throw new InputError(field, message);
-};
+}
 /** @param {unknown} value @param {string} field @param {number} min @param {number} max */
 export function text(value, field, min, max) {
   if (typeof value !== "string") fail(field, `${field} must be text.`);
@@ -146,7 +147,8 @@ function fieldValue(field, value, resource, strings) {
   if (field === "supplier") return text(value, field, 1, 120);
   if (field === "content") return text(value, field, 10, 1000);
   if (field === "price")
-    return numeric(value, field, 0, 1000000, false, strings);
+    return numeric(value, field, 0.01, 1000000, false, strings);
+  if (field === "revision") return numeric(value, field, 0, Number.MAX_SAFE_INTEGER, true, strings);
   if (field === "stock")
     return numeric(value, field, 0, 1000000, true, strings);
   if (field === "quantity") return numeric(value, field, 1, 100, true, strings);
@@ -214,9 +216,10 @@ export function validateBody(path, method, body, multipart = false) {
             "supplier",
             "isActive",
           ];
-    if (method === "POST")
+    if (method === "POST" && !detail)
       required = ["name", "sku", "price", "stock", "categoryId"];
     if (detail === "status") required = ["isActive"];
+    if (detail === "upload-image") allowed = [];
   } else if (resource === "categories") {
     allowed = ["name", "isActive"];
     if (method === "POST") required = ["name"];
@@ -229,6 +232,8 @@ export function validateBody(path, method, body, multipart = false) {
         ? ["productId", "rating", "content"]
         : ["rating", "content", "isHidden", "isFlagged"];
     if (method === "POST") required = allowed;
+  } else if (resource === "orders" && method === "POST" && !action) {
+    allowed = required = ["cartId", "revision"];
   } else if (resource === "orders" && detail === "status")
     allowed = required = ["status"];
   for (const field of required)

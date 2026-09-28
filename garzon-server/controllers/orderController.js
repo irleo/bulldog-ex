@@ -1,29 +1,27 @@
+// @ts-check
+import Cart from '../models/cartModel.js';
+import Product from '../models/productModel.js';
+import { inTransaction } from '../utils/transaction.js';
+import { isPrice, isStock } from '../utils/numbers.js';
+
 import { HttpStatus, OrderStatus, UserRole } from "../config/constants.js";
-import Cart from "../models/cartModel.js";
 import Order from "../models/orderModel.js";
-import Product from "../models/productModel.js";
 import { ApiError, asyncHandler } from "../middleware/errorHandlers.js";
 import { escapeRegex, parsePagination } from "../utils/query.js";
-import { numeric, validateBody } from '../utils/validation.js';
+import { validateBody } from '../utils/validation.js';
 
 const orderPopulation = [
   { path: "userId", select: "firstName lastName email phone" },
   { path: "items.productId", select: "name slug sku images supplier" },
 ];
 
+/** @type {readonly string[]} */
 const orderStatuses = Object.values(OrderStatus);
 
-const allowedTransitions = {
-  [OrderStatus.PENDING]: new Set([OrderStatus.CONFIRMED, OrderStatus.CANCELLED]),
-  [OrderStatus.CONFIRMED]: new Set([OrderStatus.READY_FOR_CLAIMING, OrderStatus.CANCELLED]),
-  [OrderStatus.READY_FOR_CLAIMING]: new Set(),
-  [OrderStatus.CLAIMED]: new Set(),
-  [OrderStatus.CANCELLED]: new Set(),
-};
-
+/** @param {import('../middleware/errorHandlers.js').AppRequest['user']} user */
 const requireCompletedPickupProfile = (user) => {
-  validateBody('/users/me', 'PATCH', { phone: user.phone, address: user.address?.toObject() });
-  const address = user.address;
+  const address = user.address ? { street: user.address.street, city: user.address.city, province: user.address.province, postalCode: user.address.postalCode } : undefined;
+  validateBody('/users/me', 'PATCH', { phone: user.phone, address });
   if (
     !user.phone ||
     !address?.street ||
@@ -36,91 +34,17 @@ const requireCompletedPickupProfile = (user) => {
       "Complete your phone number and address before placing an order.",
     );
   }
-};
-
-const adjustInventory = async (items, direction) => {
-  const adjusted = [];
-  try {
-    for (const item of items) {
-      const update = { $inc: { stock: direction * item.quantity } };
-      const filter = {
-        _id: item.productId,
-        ...(direction < 0 ? { stock: { $gte: item.quantity }, isActive: true } : {}),
-      };
-      const product = await Product.findOneAndUpdate(filter, update, {
-        new: true,
-      });
-      if (!product) {
-        throw new ApiError(
-          HttpStatus.CONFLICT,
-          `${item.productName} no longer has enough stock.`,
-        );
-      }
-      adjusted.push(item);
-    }
-  } catch (error) {
-    for (const item of adjusted) {
-      await Product.updateOne(
-        { _id: item.productId },
-        { $inc: { stock: -direction * item.quantity } },
-      );
-    }
-    throw error;
-  }
+  return { phone: user.phone, shippingAddress: { recipientName: `${user.firstName} ${user.lastName}`, ...address } };
 };
 
 export const createOrder = asyncHandler(async (request, response) => {
-  requireCompletedPickupProfile(request.user);
-  const cart = await Cart.findOne({ userId: request.user._id }).populate({
-    path: "items.productId",
-    select: "name sku price stock isActive",
-  });
-
-  if (!cart?.items.length) {
-    throw new ApiError(HttpStatus.BAD_REQUEST, "Your cart is empty.");
-  }
-
-  const items = cart.items.map((item) => {
-    const product = item.productId;
-    numeric(item.quantity, 'quantity', 1, 100, true);
-    if (!product?.isActive || product.stock < item.quantity) {
-      throw new ApiError(
-        HttpStatus.CONFLICT,
-        `${product?.name ?? "A product"} is unavailable in the requested quantity.`,
-      );
-    }
-    numeric(product.price, 'price', 0, 1000000, false);
-    return {
-      productId: product._id,
-      productName: product.name,
-      sku: product.sku,
-      unitPrice: product.price,
-      quantity: item.quantity,
-      subtotal: product.price * item.quantity,
-    };
-  });
-
-  const order = await Order.create({
-    userId: request.user._id,
-    items,
-    phone: request.user.phone,
-    shippingAddress: {
-      recipientName: `${request.user.firstName} ${request.user.lastName}`,
-      ...request.user.address.toObject(),
-    },
-    totalAmount: items.reduce((sum, item) => sum + item.subtotal, 0),
-  });
-  cart.items = [];
-  await cart.save();
+  const contact = requireCompletedPickupProfile(request.user);
+  const key = request.get('Idempotency-Key');
+  if (!key || !/^[a-f0-9-]{36}$/i.test(key)) throw new ApiError(400, 'A valid Idempotency-Key is required.');
+  const order = await checkoutCart(String(request.user._id), key, request.body.cartId, request.body.revision, contact);
   await order.populate(orderPopulation);
-
-  response.status(HttpStatus.CREATED).json({
-    success: true,
-    message: "Order placed successfully.",
-    data: order,
-  });
+  response.status(HttpStatus.CREATED).json({ success: true, message: 'Order placed successfully.', data: order });
 });
-
 export const listMyOrders = asyncHandler(async (request, response) => {
   const { page, limit, skip } = parsePagination(
     request.query.page,
@@ -150,8 +74,8 @@ export const listOrders = asyncHandler(async (request, response) => {
     request.query.limit,
   );
   const filter = {};
-  if (request.query.status) {
-    if (!orderStatuses.includes(request.query.status)) {
+  if (String(request.query.status)) {
+    if (!orderStatuses.includes(String(request.query.status))) {
       throw new ApiError(HttpStatus.BAD_REQUEST, "status is invalid.");
     }
     filter.status = request.query.status;
@@ -162,8 +86,8 @@ export const listOrders = asyncHandler(async (request, response) => {
       $options: "i",
     };
   }
-  const sortField = request.query.sort ?? "createdAt";
-  const direction = request.query.direction ?? "desc";
+  const sortField = String(request.query.sort ?? "createdAt");
+  const direction = String(request.query.direction ?? "desc");
   if (!new Set(["createdAt", "status"]).has(sortField)) {
     throw new ApiError(
       HttpStatus.BAD_REQUEST,
@@ -310,57 +234,79 @@ export const cancelMyOrder = asyncHandler(async (request, response) => {
 });
 
 export const updateOrderStatus = asyncHandler(async (request, response) => {
-  const nextStatus = String(request.body.status ?? "");
-  if (!orderStatuses.includes(nextStatus)) {
-    throw new ApiError(HttpStatus.BAD_REQUEST, "Order status is invalid.");
-  }
-
-  const order = await Order.findById(request.params.id);
-  if (!order) {
-    throw new ApiError(HttpStatus.NOT_FOUND, "Order was not found.");
-  }
-  if (!allowedTransitions[order.status].has(nextStatus)) {
-    throw new ApiError(
-      HttpStatus.CONFLICT,
-      `Order cannot move from ${order.status} to ${nextStatus}.`,
-    );
-  }
-
-  const inventoryDirection =
-    order.status === OrderStatus.PENDING && nextStatus === OrderStatus.CONFIRMED
-      ? -1
-      : order.status === OrderStatus.CONFIRMED && nextStatus === OrderStatus.CANCELLED
-        ? 1
-        : 0;
-  if (inventoryDirection)
-    await adjustInventory(order.items, inventoryDirection);
-
-  let updatedOrder;
+  const order = await transitionOrder(String(request.params.id), request.body.status);
+  await order.populate(orderPopulation);
+  response.status(HttpStatus.OK).json({ success: true, message: `Order marked as ${order.status.replaceAll('_', ' ')}.`, data: order });
+});
+/** @param {string} userId @param {string} key @param {string} cartId @param {number} revision
+ * @param {{phone:string, shippingAddress:Record<string, unknown>}} contact */
+export async function checkoutCart(userId, key, cartId, revision, contact) {
+  const existing = await Order.findOne({ userId, checkoutKey: key });
+  if (existing) return existing;
   try {
-    updatedOrder = await Order.findOneAndUpdate(
-      { _id: order._id, status: order.status },
-      { $set: { status: nextStatus } },
-      { new: true, runValidators: true },
-    ).populate(orderPopulation);
+    return await inTransaction(async (session) => {
+      const replay = await Order.findOne({ userId, checkoutKey: key }).session(session);
+      if (replay) return replay;
+      const cart = await Cart.findOne({ _id: cartId, userId }).session(session).lean();
+      if (!cart?.items.length || (cart.revision ?? 0) !== revision) {
+        throw new ApiError(409, 'Your cart changed. Refresh it before placing an order.');
+      }
+      const products = await Product.find({ _id: { $in: cart.items.map(item => item.productId) } })
+        .select('name sku price stock isActive').limit(100).session(session).lean();
+      const items = cart.items.map(item => {
+        const product = products.find(product => String(product._id) === String(item.productId));
+        if (!product?.isActive || !isPrice(product.price) || !isStock(product.stock)
+          || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100 || product.stock < item.quantity) {
+          throw new ApiError(409, 'A product is unavailable or has invalid pricing. Refresh your cart.');
+        }
+        return { productId: product._id, productName: product.name, sku: product.sku,
+          unitPrice: product.price, quantity: item.quantity, subtotal: Math.round(product.price * 100) * item.quantity / 100 };
+      });
+      const consumed = await Cart.updateOne({ _id: cart._id, items: cart.items },
+        { $set: { items: [] }, $inc: { revision: 1 } }, { session });
+      if (consumed.modifiedCount !== 1) throw new ApiError(409, 'Your cart changed. Refresh and try again.');
+      const [order] = await Order.create([{ userId, checkoutKey: key, items, ...contact,
+        totalAmount: items.reduce((sum, item) => sum + Math.round(item.subtotal * 100), 0) / 100 }], { session });
+      return order;
+    });
   } catch (error) {
-    if (inventoryDirection) {
-      await adjustInventory(order.items, -inventoryDirection);
-    }
+    // A duplicate key or a lost commit response can be a successful earlier request.
+    const replay = await Order.findOne({ userId, checkoutKey: key });
+    if (replay) return replay;
     throw error;
   }
-  if (!updatedOrder) {
-    if (inventoryDirection) {
-      await adjustInventory(order.items, -inventoryDirection);
-    }
-    throw new ApiError(
-      HttpStatus.CONFLICT,
-      "The order was updated by another request. Refresh and try again.",
-    );
-  }
+}
 
-  response.status(HttpStatus.OK).json({
-    success: true,
-    message: `Order marked as ${nextStatus.replaceAll("_", " ")}.`,
-    data: updatedOrder,
+/** @type {Record<string, string[]>} */
+const transitions = {
+  pending: ['confirmed', 'cancelled'], confirmed: ['ready_for_claiming', 'cancelled'],
+  ready_for_claiming: [], claimed: [], cancelled: [],
+};
+
+/** @param {string} id @param {string} nextStatus */
+export async function transitionOrder(id, nextStatus) {
+  return inTransaction(async (session) => {
+    const order = await Order.findById(id).session(session);
+    if (!order) throw new ApiError(404, 'Order was not found.');
+    if (order.status === nextStatus) return order;
+    if (!transitions[order.status]?.includes(nextStatus)) throw new ApiError(409, `Order cannot move from ${order.status} to ${nextStatus}.`);
+    const direction = order.status === 'pending' && nextStatus === 'confirmed' ? -1
+      : order.status === 'confirmed' && nextStatus === 'cancelled' ? 1 : 0;
+    if (direction) {
+      for (const item of order.items) {
+        if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100 || !isPrice(item.unitPrice)) {
+          throw new ApiError(409, 'The order contains invalid item values. Contact the administrator.');
+        }
+        const stock = direction < 0 ? { $gte: item.quantity, $lte: 1000000, $mod: /** @type {[number, number]} */ ([1, 0]) } : { $gte: 0, $lte: 1000000 - item.quantity, $mod: /** @type {[number, number]} */ ([1, 0]) };
+        const result = await Product.updateOne({ _id: item.productId, stock,
+          ...(direction < 0 ? { isActive: true, price: { $gte: 0.01, $lte: 1000000 } } : {}) },
+        { $inc: { stock: direction * item.quantity } }, { session });
+        if (result.modifiedCount !== 1) throw new ApiError(409, `${item.productName} has unavailable or invalid stock.`);
+      }
+    }
+    const updated = await Order.findOneAndUpdate({ _id: order._id, status: order.status },
+      { $set: { status: nextStatus } }, { returnDocument: 'after', runValidators: true, session });
+    if (!updated) throw new ApiError(409, 'The order changed. Refresh and try again.');
+    return updated;
   });
-});
+}

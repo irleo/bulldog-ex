@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../api/apiClient.js";
 import { useAuth } from "../../auth/authContext.js";
 import { notify } from "../../utils/toast.js";
+import ProductImageInput from '../../components/ProductImageInput.jsx';
 import {
   useConfirmation,
   useUnsavedForm,
@@ -269,9 +270,9 @@ const AdminConsolePage = ({ section }) => {
       };
     } else if (resource === "users" && (options.method === "DELETE" || (action === "status" && !body.isActive))) {
       const deleting = options.method === "DELETE";
-      question = { title: deleting ? "Delete user?" : "Suspend user?",
-        message: `${deleting ? "Permanently delete" : "Suspend"} ${record?.firstName ?? "this"} ${record?.lastName ?? "user"} (${record?.email ?? id})? ${deleting ? "The account will be removed and related order or review records may lose their user reference. This cannot be undone." : "They will lose access to their account. An administrator can reactivate it later."}`,
-        confirmLabel: deleting ? "Delete user" : "Suspend user", destructive: true };
+      question = { title: deleting ? "Archive user?" : "Suspend user?",
+        message: `${deleting ? "Archive" : "Suspend"} ${record?.firstName ?? "this"} ${record?.lastName ?? "user"} (${record?.email ?? id})? ${deleting ? "Access will be revoked. Order history, reviews, profile details, and the cart are retained for recordkeeping." : "They will lose access to their account. An administrator can reactivate it later."}`,
+        confirmLabel: deleting ? "Archive user" : "Suspend user", destructive: true };
     } else if (resource === "users" && body.email && body.email !== record?.email) {
       question = { title: "Change sign-in email?", message: `Change ${record?.firstName ?? "this user"}'s sign-in email from ${record?.email} to ${body.email}? They must use the new address to sign in. An administrator can change it back.`, confirmLabel: "Change email" };
     }
@@ -280,10 +281,11 @@ const AdminConsolePage = ({ section }) => {
       inFlight.current = true;
       setSaving(true);
       try {
-        await apiRequest(path, options);
+        const result = await apiRequest(path, options);
         markSaved();
         setSelected(null);
         notify.success(successMessage);
+        if (result.warning) notify.info(result.warning);
         await load();
         return true;
       } finally { inFlight.current = false; setSaving(false); }
@@ -315,6 +317,8 @@ const AdminConsolePage = ({ section }) => {
   const saveProduct = async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const image = form.get('image');
+    if (image instanceof File && !image.name) form.delete('image');
     if (!form.get("supplier")) form.set("supplier", "Bulldogs Exchange");
     const saved = await mutate(
       selected ? `/products/${selected._id}` : "/products",
@@ -462,7 +466,7 @@ const AdminConsolePage = ({ section }) => {
                 <input
                   name="price"
                   type="number"
-                  min="0"
+                  min="0.01"
                   step="0.01"
                   required
                   defaultValue={selected?.price ?? ""}
@@ -479,23 +483,7 @@ const AdminConsolePage = ({ section }) => {
                   className={fieldClass}
                   placeholder="Stock"
                 />
-                <label className="md:col-span-2">
-                  <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">
-                    Product image
-                  </span>
-                  <input
-                    name="image"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className={`${fieldClass} w-full file:mr-4 file:rounded-md file:border-0 file:bg-[#0b1b46] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white`}
-                  />
-                  <span className="mt-1.5 block text-xs text-[#64748b]">
-                    Choose a JPG, PNG, or WebP image up to 5 MB.
-                    {selected?.images?.length
-                      ? " Leave this empty to keep the current image."
-                      : " A local product image is used as the fallback."}
-                  </span>
-                </label>
+                <ProductImageInput key={selected?._id ?? "new"} product={selected} className={fieldClass} />
                 <div className="flex justify-end gap-2 border-t border-[#e3e7f0] pt-4 md:col-span-2">
                   <button
                     type="button"

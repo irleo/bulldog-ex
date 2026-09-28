@@ -1,3 +1,9 @@
+// @ts-check
+import { randomUUID } from "node:crypto";
+import cloudinary, { requireCloudinary } from "../config/cloudinary.js";
+import { scheduleCleanup, processCleanup } from "../utils/mediaCleanup.js";
+import Review from "../models/reviewModel.js";
+import { isPrice, isStock } from "../utils/numbers.js";
 import mongoose from "mongoose";
 import { HttpStatus, UserRole } from "../config/constants.js";
 import Category from "../models/categoryModel.js";
@@ -18,7 +24,6 @@ const productFields = [
   "stock",
   "categoryId",
   "supplier",
-  "images",
   "isActive",
 ];
 
@@ -30,7 +35,7 @@ const selectProductFields = (source = {}) =>
       .map((field) => [field, source[field]]),
   );
 
-/** @param {unknown} rawSort */
+/** @param {unknown} rawSort @returns {Record<string, import('mongoose').SortOrder>} */
 const parseProductSort = (rawSort) => {
   const requested = String(rawSort ?? "-createdAt");
   const descending = requested.startsWith("-");
@@ -73,13 +78,19 @@ const resolveCategoryId = async (rawCategory) => {
 
 export const createProduct = asyncHandler(async (request, response) => {
   const productData = selectProductFields(request.body);
-  if (!(await Category.exists({ _id: productData.categoryId, isActive: true }))) {
-    throw new ApiError(HttpStatus.BAD_REQUEST, 'Choose an existing active category.');
+  if (
+    !(await Category.exists({ _id: productData.categoryId, isActive: true }))
+  ) {
+    throw new ApiError(
+      HttpStatus.BAD_REQUEST,
+      "Choose an existing active category.",
+    );
   }
-  if (request.file) {
-    productData.images = [`/uploads/products/${request.file.filename}`];
-  }
-  const product = await Product.create(productData);
+  const product = await createProductWithImage(
+    productData,
+    request.file?.buffer,
+  );
+  product.imagePublicId = undefined;
   await product.populate(categoryPopulation);
   response.status(HttpStatus.CREATED).json({
     success: true,
@@ -146,7 +157,15 @@ export const listProducts = asyncHandler(async (request, response) => {
       "minPrice cannot be greater than maxPrice.",
     );
   }
+  if (request.user?.role !== UserRole.ADMIN) {
+    filter.price = {
+      $gte: Math.max(0.01, minPrice ?? 0.01),
+      $lte: Math.min(1000000, maxPrice ?? 1000000),
+    };
+    filter.stock = { $gte: 1, $lte: 1000000, $mod: [1, 0] };
+  }
   const requestedSort = parseProductSort(request.query.sort);
+  /** @type {Record<string, import('mongoose').SortOrder>} */
   const productSort =
     request.user?.role === UserRole.ADMIN && isActive === undefined
       ? { isActive: -1, ...requestedSort }
@@ -177,41 +196,78 @@ export const getProduct = asyncHandler(async (request, response) => {
     isActive: true,
   }).populate(categoryPopulation);
 
-  if (!product) {
+  if (!product || !isPrice(product.price) || !isStock(product.stock)) {
     throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
   }
+  const [rating] = await Review.aggregate([
+    { $match: { productId: product._id, isHidden: false } },
+    {
+      $group: {
+        _id: null,
+        averageRating: { $avg: "$rating" },
+        reviewCount: { $sum: 1 },
+      },
+    },
+    { $limit: 1 },
+  ]);
 
   response.status(HttpStatus.OK).json({
     success: true,
     message: "Product retrieved successfully.",
     count: 1,
-    data: product,
+    data: {
+      ...product.toObject(),
+      averageRating: rating?.averageRating ?? null,
+      reviewCount: rating?.reviewCount ?? 0,
+    },
   });
 });
 
 export const updateProduct = asyncHandler(async (request, response) => {
   const productUpdates = selectProductFields(request.body);
-  if (productUpdates.categoryId !== undefined && !(await Category.exists({ _id: productUpdates.categoryId, isActive: true }))) {
-    throw new ApiError(HttpStatus.BAD_REQUEST, 'Choose an existing active category.');
+  if (!request.file && !Object.keys(productUpdates).length) {
+    throw new ApiError(400, "Provide a product field or image to update.");
   }
-  if (request.file) {
-    productUpdates.images = [`/uploads/products/${request.file.filename}`];
+  if (
+    productUpdates.categoryId !== undefined &&
+    !(await Category.exists({ _id: productUpdates.categoryId, isActive: true }))
+  ) {
+    throw new ApiError(
+      HttpStatus.BAD_REQUEST,
+      "Choose an existing active category.",
+    );
   }
-  const product = await Product.findByIdAndUpdate(
+  const { product, warning } = await updateProductWithImage(
     request.params.id,
     productUpdates,
-    { new: true, runValidators: true },
-  ).populate(categoryPopulation);
-
-  if (!product) {
-    throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
-  }
+    request.file?.buffer,
+  );
+  await product.populate(categoryPopulation);
 
   response.status(HttpStatus.OK).json({
     success: true,
     message: "Product updated successfully.",
+    ...(warning ? { warning } : {}),
     count: 1,
     data: product,
+  });
+});
+
+export const uploadProductImage = asyncHandler(async (request, response) => {
+  if (!request.file)
+    throw new ApiError(400, "Choose an image in the image field.");
+  const { product, warning } = await updateProductWithImage(
+    request.params.id,
+    {},
+    request.file.buffer,
+  );
+  await product.populate(categoryPopulation);
+  response.status(HttpStatus.OK).json({
+    success: true,
+    message: "Product image updated successfully.",
+    count: 1,
+    data: product,
+    ...(warning ? { warning } : {}),
   });
 });
 
@@ -239,16 +295,177 @@ export const setProductStatus = asyncHandler(async (request, response) => {
 });
 
 export const deleteProduct = asyncHandler(async (request, response) => {
-  const product = await Product.findByIdAndDelete(request.params.id);
+  const product = await Product.findById(request.params.id).select(
+    "+imagePublicId",
+  );
 
   if (!product) {
     throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
   }
 
+  await scheduleCleanup(product.imagePublicId);
+  const removed = await Product.deleteOne({
+    _id: product._id,
+    imagePublicId: product.imagePublicId ?? { $exists: false },
+  });
+  if (!removed.deletedCount)
+    throw new ApiError(409, "The product changed. Refresh and retry.");
+  const warning = await cleanupProductAsset(product.imagePublicId);
   response.status(HttpStatus.OK).json({
     success: true,
     message: "Product deleted successfully.",
+    ...(warning ? { warning } : {}),
     count: 1,
     data: { id: product.id, deleted: true },
   });
 });
+
+// Cloudinary uploads and product persistence.
+/** @typedef {{url: string, publicId: string}} ProductImageAsset */
+
+/** @param {Buffer} buffer @returns {Promise<ProductImageAsset>} */
+export async function uploadProductAsset(buffer) {
+  requireCloudinary();
+  const publicId = `bulldogs-exchange/products/${randomUUID()}`;
+  await scheduleCleanup(publicId);
+  try {
+    const result = await new Promise(
+      /** @param {(value: import('cloudinary').UploadApiResponse) => void} resolve */ (
+        resolve,
+        reject,
+      ) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            public_id: publicId,
+            asset_folder: "bulldogs-exchange/products",
+            resource_type: "image",
+            format: "webp",
+            overwrite: false,
+            timeout: 30000,
+          },
+          (error, uploaded) => {
+            if (error) reject(error);
+            else if (!uploaded?.secure_url || uploaded.public_id !== publicId)
+              reject(new Error("Invalid upload response."));
+            else resolve(uploaded);
+          },
+        );
+        stream.on("error", reject);
+        stream.end(buffer);
+      },
+    );
+    return { url: result.secure_url, publicId };
+  } catch (error) {
+    await cleanupProductAsset(publicId);
+    console.error("Product image upload failed.", {
+      publicId,
+      error: error instanceof Error ? error.name : "UploadError",
+    });
+    throw new ApiError(
+      502,
+      "Image storage could not accept the upload. Please try again.",
+    );
+  }
+}
+
+/** Cleanup failure must not turn an already committed product write into a failed save.
+ * @param {string | null | undefined} publicId @returns {Promise<string | undefined>}
+ */
+export async function cleanupProductAsset(publicId) {
+  if (!publicId) return undefined;
+  try {
+    await scheduleCleanup(publicId);
+    await processCleanup(publicId);
+    return undefined;
+  } catch (error) {
+    console.error("Product asset cleanup requires retry.", {
+      publicId,
+      error: error instanceof Error ? error.name : "CleanupError",
+    });
+    return "The product was saved, but an unused image could not be removed. Contact the store administrator.";
+  }
+}
+
+/** A network/write-concern error may occur after MongoDB committed the write.
+ * @param {unknown} error @param {string | undefined} publicId
+ */
+async function cleanupRejectedWrite(error, publicId) {
+  if (!publicId) return;
+  const rejected =
+    error instanceof ApiError ||
+    error instanceof Product.base.Error.ValidationError ||
+    (typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === 11000);
+  if (rejected) await cleanupProductAsset(publicId);
+  else
+    console.error(
+      "Product write outcome is unknown; reconcile asset before deleting.",
+      { publicId },
+    );
+}
+
+/** @param {Record<string, unknown>} fields @param {Buffer | undefined} buffer */
+export async function createProductWithImage(fields, buffer) {
+  const product = new Product(fields);
+  await product.validate();
+  const asset = buffer ? await uploadProductAsset(buffer) : undefined;
+  if (asset) {
+    product.images = [asset.url];
+    product.imagePublicId = asset.publicId;
+  }
+  try {
+    await product.save();
+  } catch (error) {
+    await cleanupRejectedWrite(error, asset?.publicId);
+    throw error;
+  }
+  return product;
+}
+
+/** Compare the previous image state atomically so concurrent replacements cannot orphan each other.
+ * @param {string} id
+ * @param {Record<string, unknown>} fields
+ * @param {Buffer | undefined} buffer
+ */
+export async function updateProductWithImage(id, fields, buffer) {
+  const previous = await Product.findById(id).select("+imagePublicId");
+  if (!previous) throw new ApiError(404, "Product was not found.");
+  const oldImages = [...previous.images];
+  const oldPublicId = previous.imagePublicId;
+  if (buffer) await scheduleCleanup(oldPublicId);
+  previous.set(fields);
+  await previous.validate();
+  const asset = buffer ? await uploadProductAsset(buffer) : undefined;
+  const updates = {
+    ...fields,
+    ...(asset ? { images: [asset.url], imagePublicId: asset.publicId } : {}),
+  };
+  let product;
+  try {
+    product = await Product.findOneAndUpdate(
+      {
+        _id: id,
+        ...(asset
+          ? {
+              images: oldImages,
+              imagePublicId: oldPublicId ?? { $exists: false },
+            }
+          : {}),
+      },
+      { $set: updates },
+      { returnDocument: "after", runValidators: true },
+    );
+    if (!product)
+      throw new ApiError(
+        409,
+        "This product changed during the upload. Reload it and try again.",
+      );
+  } catch (error) {
+    await cleanupRejectedWrite(error, asset?.publicId);
+    throw error;
+  }
+  const warning = asset ? await cleanupProductAsset(oldPublicId) : undefined;
+  return { product, warning };
+}

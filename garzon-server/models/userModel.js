@@ -89,6 +89,8 @@ const userSchema = new mongoose.Schema(
     },
     address: { type: addressSchema, default: undefined },
     isActive: { type: Boolean, default: true },
+    sessionVersion: { type: Number, default: 0, min: 0, select: false },
+    deletedAt: { type: Date, default: null },
     failedLoginAttempts: {
       type: Number,
       min: 0,
@@ -128,106 +130,3 @@ userSchema.index({ role: 1, isActive: 1 });
 const User = mongoose.model("User", userSchema, "users");
 
 export default User;
-
-export const FAILURE_RETENTION_MS = 24 * 60 * 60_000;
-/** @typedef {{failedLoginAttempts: number, loginLockedUntil: Date|null, loginFailuresExpireAt: Date|null}} AttemptState */
-
-/** @param {string} email @returns {Promise<AttemptState|null>} */
-export async function findAttempt(email) {
-  return User.findOne({ email })
-    .select("failedLoginAttempts loginLockedUntil loginFailuresExpireAt")
-    .lean()
-    .exec();
-}
-
-/**
- * One atomic update increments the counter and applies the cooldown. Concurrent
- * failures received during a newly imposed lock cannot increase or extend it.
- * @param {string} email @param {Date} now @returns {Promise<AttemptState|null>}
- */
-export async function recordFailure(email, now) {
-  const isLocked = {
-    $gt: [{ $ifNull: ["$loginLockedUntil", new Date(0)] }, now],
-  };
-  const expired = {
-    $lte: [{ $ifNull: ["$loginFailuresExpireAt", new Date(0)] }, now],
-  };
-  const count = {
-    $cond: [expired, 0, { $ifNull: ["$failedLoginAttempts", 0] }],
-  };
-  const pipeline = [
-    {
-      $set: {
-        failedLoginAttempts: {
-          $cond: [
-            isLocked,
-            "$failedLoginAttempts",
-            { $min: [10, { $add: [count, 1] }] },
-          ],
-        },
-        updatedAt: { $cond: [isLocked, "$updatedAt", now] },
-        loginFailuresExpireAt: {
-          $cond: [
-            isLocked,
-            "$loginFailuresExpireAt",
-            new Date(now.getTime() + FAILURE_RETENTION_MS),
-          ],
-        },
-      },
-    },
-    {
-      $set: {
-        loginLockedUntil: {
-          $cond: [
-            isLocked,
-            "$loginLockedUntil",
-            {
-              $switch: {
-                branches: [
-                  {
-                    case: { $gte: ["$failedLoginAttempts", 10] },
-                    then: new Date(now.getTime() + 30 * 60_000),
-                  },
-                  {
-                    case: { $gte: ["$failedLoginAttempts", 8] },
-                    then: new Date(now.getTime() + 5 * 60_000),
-                  },
-                  {
-                    case: { $gte: ["$failedLoginAttempts", 5] },
-                    then: new Date(now.getTime() + 3 * 60_000),
-                  },
-                ],
-                default: null,
-              },
-            },
-          ],
-        },
-      },
-    },
-  ];
-  return User.findOneAndUpdate({ email }, pipeline, {
-    returnDocument: "after",
-    updatePipeline: true,
-    timestamps: false,
-  })
-    .select("failedLoginAttempts loginLockedUntil loginFailuresExpireAt")
-    .lean()
-    .exec();
-}
-/** @param {string} email @param {Date} now @returns {Promise<void>} */
-export async function resetFailures(email, now) {
-  // Never erase a lock imposed by a concurrent failed login.
-  await User.updateOne(
-    {
-      email,
-      $or: [{ loginLockedUntil: null }, { loginLockedUntil: { $lte: now } }],
-    },
-    {
-      $set: {
-        failedLoginAttempts: 0,
-        loginLockedUntil: null,
-        loginFailuresExpireAt: new Date(now.getTime() + FAILURE_RETENTION_MS),
-      },
-    },
-  ).exec();
-}

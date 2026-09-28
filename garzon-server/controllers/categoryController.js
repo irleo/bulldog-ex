@@ -67,7 +67,7 @@ export const updateCategory = asyncHandler(async (request, response) => {
 });
 
 export const deleteCategory = asyncHandler(async (request, response) => {
-  const category = await Category.findByIdAndDelete(request.params.id);
+  const category = await Category.findByIdAndUpdate(request.params.id, { $set: { isActive: false } }, { new: true });
 
   if (!category) {
     throw new ApiError(HttpStatus.NOT_FOUND, "Category was not found.");

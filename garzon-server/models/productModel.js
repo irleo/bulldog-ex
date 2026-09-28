@@ -31,7 +31,7 @@ const productSchema = new mongoose.Schema(
     price: {
       type: Number,
       required: [true, "Product price is required."],
-      min: [0, "Product price cannot be negative."],
+      min: [0.01, "Product price must be at least 0.01."],
       max: [1000000, "Product price cannot exceed 1000000."],
       validate: {
         validator: (value) =>
@@ -68,6 +68,12 @@ const productSchema = new mongoose.Schema(
         validator: (images) => images.length <= 8,
         message: "A product can contain at most 8 images.",
       },
+    },
+    // Absent for legacy/local images. Only the upload service assigns this field.
+    imagePublicId: {
+      type: String,
+      match: /^bulldogs-exchange\/products\/[a-f0-9-]{36}$/,
+      select: false,
     },
     isActive: { type: Boolean, default: true },
   },

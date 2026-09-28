@@ -1,11 +1,12 @@
 import app from './app.js';
 import { PORT } from './config/config.js';
 import connectDB from './config/db.js';
-import Log from './models/logModel.js';
+import mongoose from 'mongoose';
 
 try {
   await connectDB();
-  await Log.init();
+  // Enforce unique keys and expiry indexes before accepting requests.
+  await Promise.all(Object.values(mongoose.models).map(model => model.init()));
   const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}.`));
   server.on('error', (error) => {
     console.error('HTTP server failed:', error.message);

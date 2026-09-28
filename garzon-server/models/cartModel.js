@@ -23,6 +23,7 @@ const cartItemSchema = new mongoose.Schema(
 
 const cartSchema = new mongoose.Schema(
   {
+    revision: { type: Number, default: 0, min: 0 },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

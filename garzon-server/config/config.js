@@ -24,9 +24,17 @@ const PORT = parsePort(process.env.PORT);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
 const JWT_SECRET = process.env.JWT_SECRET ?? "development-only-change-me";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN ?? "8h";
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY?.trim();
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET?.trim();
 
-if (NODE_ENV === "production" && JWT_SECRET === "development-only-change-me") {
+if (NODE_ENV === "production" && (JWT_SECRET.length < 32 || /development|change.?me|example|password/i.test(JWT_SECRET))) {
   throw new Error("JWT_SECRET must be configured in production.");
 }
 
 export { CLIENT_ORIGIN, JWT_EXPIRES_IN, JWT_SECRET, MONGO_URI, NODE_ENV, PORT };
+export { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET };
+
+// Exact proxy addresses/subnets only; never trust arbitrary forwarded client addresses.
+const TRUST_PROXY = process.env.TRUST_PROXY?.split(',').map(value => value.trim()).filter(Boolean) ?? [];
+export { TRUST_PROXY };

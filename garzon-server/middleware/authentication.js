@@ -1,7 +1,8 @@
 import { HttpStatus } from '../config/constants.js';
 import User from '../models/userModel.js';
 import { ApiError, asyncHandler } from './errorHandlers.js';
-import { verifyAccessToken } from '../utils/token.js';
+import { verifyAccessToken, hashToken } from '../utils/token.js';
+import Session from '../models/sessionModel.js';
 
 /**
  * Verifies a Bearer JWT, reloads the account, and attaches the active user to
@@ -31,15 +32,20 @@ export const authenticate = asyncHandler(async (request, _response, next) => {
     throw new ApiError(HttpStatus.UNAUTHORIZED, 'The authentication token is invalid.');
   }
   const user = await User.findById(payload.sub).select(
-    'firstName lastName studentNumber course yearLevel email role phone address isActive',
+    'firstName lastName studentNumber course yearLevel email role phone address isActive deletedAt +sessionVersion',
   );
 
-  if (!user) {
+  if (!user || user.deletedAt) {
     throw new ApiError(HttpStatus.UNAUTHORIZED, 'The account no longer exists.');
   }
   if (!user.isActive) {
-    throw new ApiError(HttpStatus.FORBIDDEN, 'This account is inactive.');
+    throw new ApiError(HttpStatus.UNAUTHORIZED, 'This account is inactive. Please sign in again.');
   }
+
+  request.tokenHash = hashToken(token);
+  if (payload.version !== (user.sessionVersion ?? 0) || !(await Session.exists({
+    tokenHash: request.tokenHash, userId: user._id, expiresAt: { $gt: new Date() },
+  }))) throw new ApiError(401, 'Your session has ended. Please sign in again.');
 
   request.user = user;
   next();

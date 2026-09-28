@@ -1,3 +1,4 @@
+import { isPrice, isStock } from "../../utils/numbers.js";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "../../api/apiClient.js";
@@ -24,6 +25,13 @@ const CartPage = () => {
   const { user } = useAuth();
   const { confirm, confirmation } = useConfirmation();
   const inFlight = useRef(false);
+  // Keep the key across reloads and ambiguous network responses for this cart revision.
+  const checkoutKey = () => {
+    const key = `checkout:${user._id}:${cart._id}:${cart.revision ?? 0}`;
+    const saved = sessionStorage.getItem(key) ?? crypto.randomUUID();
+    sessionStorage.setItem(key, saved);
+    return saved;
+  };
   useEffect(() => {
     apiRequest("/carts")
       .then((payload) => setCart(payload.data))
@@ -49,11 +57,11 @@ const CartPage = () => {
   };
 
   const removeItem = (item) => confirm({
-    title: "Remove item?", message: `Remove "${item.productId.name}" from your cart? You can add it again while it remains available.`,
+    title: "Remove item?", message: `Remove "${(item.productId?.name ?? "Unavailable product")}" from your cart? You can add it again while it remains available.`,
     cancelLabel: "Keep item", confirmLabel: "Remove item", destructive: true,
     onConfirm: async () => {
-      const removed = await mutate(`/carts/items/${item.productId._id}`, { method: "DELETE" }, false);
-      if (removed) notify.success(`${item.productId.name} was removed from your cart.`);
+      const removed = await mutate(`/carts/items/${item.productRef ?? item.productId?._id}`, { method: "DELETE" }, false);
+      if (removed) notify.success(`${(item.productId?.name ?? "Unavailable product")} was removed from your cart.`);
       return removed;
     },
   });
@@ -61,7 +69,7 @@ const CartPage = () => {
   const checkout = () => {
     if (inFlight.current) return;
     if (!cart?.items.length) { setError("Your cart is empty."); return; }
-    if (cart.items.some((item) => !item.productId?.isActive || item.quantity < 1 || item.quantity > item.productId.stock)) {
+    if (cart.items.some((item) => !item.productId?.isActive || !isPrice(item.productId?.price) || !isStock(item.productId?.stock) || !Number.isInteger(item.quantity) || item.quantity > 100 || item.quantity < 1 || item.quantity > item.productId.stock)) {
       setError("Some products are unavailable or exceed available stock. Update your cart before placing an order.");
       return;
     }
@@ -71,13 +79,13 @@ const CartPage = () => {
     }
     setError("");
     confirm({ title: "Place order?", confirmLabel: "Place order", cancelLabel: "Review order",
-      message: `Place this campus pickup order for ${peso.format(total)} for ${user.firstName} ${user.lastName} (${user.phone})? Check the products and quantities in your cart. You can cancel only while the order is pending; availability is confirmed during processing.`,
+      message: `Place this campus pickup order for ${Number.isFinite(total) ? peso.format(total) : "Unavailable"} for ${user.firstName} ${user.lastName} (${user.phone})? Check the products and quantities in your cart. You can cancel only while the order is pending; availability is confirmed during processing.`,
       onConfirm: async () => {
         if (inFlight.current) return false;
         inFlight.current = true;
         setSubmitting(true);
         try {
-          const payload = await apiRequest("/orders", { method: "POST" });
+          const payload = await apiRequest("/orders", { method: "POST", headers: { "Idempotency-Key": checkoutKey() }, body: JSON.stringify({ cartId: cart._id, revision: cart.revision ?? 0 }) });
           setCart((current) => ({ ...current, items: [] }));
           notify.success(`Order ${payload.data.orderNumber} was placed successfully.`);
         } finally { inFlight.current = false; setSubmitting(false); }
@@ -86,7 +94,7 @@ const CartPage = () => {
   };
   const total =
     cart?.items.reduce(
-      (sum, item) => sum + (item.productId?.price ?? 0) * item.quantity,
+      (sum, item) => sum + (isPrice(item.productId?.price) && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 100 ? item.productId.price : NaN) * item.quantity,
       0,
     ) ?? 0;
 
@@ -126,7 +134,7 @@ const CartPage = () => {
               const product = item.productId;
               return (
                 <StoreCard
-                  key={product?._id}
+                  key={item.productRef ?? product?._id}
                   accent={false}
                   className="flex flex-wrap items-center gap-4 p-4"
                 >
@@ -142,7 +150,7 @@ const CartPage = () => {
                       {product?.name ?? "Unavailable product"}
                     </h2>
                     <p className="mt-0.5 text-xs text-[#64748b]">
-                      {peso.format(product?.price ?? 0)} each
+                      {isPrice(product?.price) ? peso.format(product.price) : "Unavailable"} each
                     </p>
                   </div>
                   <div className="flex items-center rounded-lg border border-[#e3e7f0]">
@@ -161,7 +169,7 @@ const CartPage = () => {
                       <StoreIcon name="minus" className="h-3.5 w-3.5" />
                     </button>
                     <span className="w-7 text-center text-sm">
-                      {item.quantity}
+                      {Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 100 ? item.quantity : "Invalid"}
                     </span>
                     <button
                       onClick={() =>
@@ -178,12 +186,12 @@ const CartPage = () => {
                     </button>
                   </div>
                   <strong className="w-20 text-right text-sm">
-                    {peso.format((product?.price ?? 0) * item.quantity)}
+                    {isPrice(product?.price) && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 100 ? peso.format(product.price * item.quantity) : "Unavailable"}
                   </strong>
                   <button
                     type="button"
                     onClick={() => removeItem(item)}
-                    disabled={submitting || !product?._id}
+                    disabled={submitting || !(item.productRef ?? product?._id)}
                     className="text-red-700"
                     aria-label={`Remove ${product?.name}`}
                   >
@@ -199,7 +207,7 @@ const CartPage = () => {
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-[#64748b]">Subtotal</span>
-              <span>{peso.format(total)}</span>
+              <span>{Number.isFinite(total) ? peso.format(total) : "Unavailable"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#64748b]">Service fee</span>
@@ -209,11 +217,11 @@ const CartPage = () => {
           <div className="my-3 border-t border-[#e3e7f0]" />
           <div className="font-display flex justify-between font-extrabold">
             <span>Total</span>
-            <span className="text-[#0b1b46]">{peso.format(total)}</span>
+            <span className="text-[#0b1b46]">{Number.isFinite(total) ? peso.format(total) : "Unavailable"}</span>
           </div>
           <button
             onClick={checkout}
-            disabled={!cart?.items.length || submitting}
+            disabled={!cart?.items.length || !Number.isFinite(total) || total <= 0 || submitting}
             className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#0b1b46] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <StoreIcon name="shield" className="h-4 w-4" />

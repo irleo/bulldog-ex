@@ -14,13 +14,20 @@ async function writeAuditLog(entry) {
  * @returns {import('express').RequestHandler}
  */
 export function createAuditLogger(writeLog = writeAuditLog) {
+  let pending = 0;
+  let lastThrottleLog = 0;
   return (request, response, next) => {
+    if (!request.originalUrl.startsWith('/api/v1/')) return next();
     const started = performance.now();
     // Exclude query strings, which may contain credentials or personal data.
     const path = request.originalUrl.split('?')[0].slice(0, 2048);
     response.once('finish', () => {
       const authenticatedRequest = /** @type {import('express').Request & {user?: {_id: import('mongoose').Types.ObjectId}}} */ (request);
       const statusCode = response.statusCode;
+      // Cap outstanding writes and sample throttled traffic to protect the database.
+      if (pending >= 32 || (statusCode === 429 && Date.now() - lastThrottleLog < 60000)) return;
+      if (statusCode === 429) lastThrottleLog = Date.now();
+      pending += 1;
       const write = async () => {
         try {
           await writeLog({
@@ -33,6 +40,8 @@ export function createAuditLogger(writeLog = writeAuditLog) {
         } catch (error) {
           // Logging must never replace an already completed API response.
           console.error('Audit log output failed:', error instanceof Error ? error.name : 'UnknownError');
+        } finally {
+          pending -= 1;
         }
       };
       void write();

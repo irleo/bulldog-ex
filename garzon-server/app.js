@@ -1,9 +1,10 @@
+import dashboardRoutes from "./routes/dashboardRoutes.js";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { fileURLToPath } from "node:url";
-import { CLIENT_ORIGIN, NODE_ENV } from "./config/config.js";
+import { CLIENT_ORIGIN, NODE_ENV, TRUST_PROXY } from "./config/config.js";
 import { HttpStatus } from "./config/constants.js";
 import {
   notFoundHandler,
@@ -22,11 +23,12 @@ import {
 } from "./middleware/rateLimiterMiddleware.js";
 
 const app = express();
+app.set("trust proxy", TRUST_PROXY.length ? TRUST_PROXY : false);
 
 const corsOptions = {
   origin: CLIENT_ORIGIN,
   credentials: true,
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Idempotency-Key"],
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
   exposedHeaders: ["Retry-After", "RateLimit", "RateLimit-Policy"],
   optionsSuccessStatus: 204,
@@ -87,6 +89,8 @@ app.use("/api/v1/carts", cartRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/reviews", reviewRoutes);
 app.use("/api/v1/users", userRoutes);
+
+app.use("/api/v1/dashboard", dashboardRoutes);
 
 // Error Handling
 app.use(notFoundHandler);

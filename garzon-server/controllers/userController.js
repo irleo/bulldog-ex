@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import { issueAccessToken } from '../utils/token.js';
+import Session from '../models/sessionModel.js';
 import { HttpStatus, UserRole } from "../config/constants.js";
-import { JWT_EXPIRES_IN, JWT_SECRET } from '../config/config.js';
 import User from "../models/userModel.js";
 import { ApiError, asyncHandler } from "../middleware/errorHandlers.js";
 import {
@@ -10,7 +10,7 @@ import {
   parsePagination,
 } from "../utils/query.js";
 import { selectFields } from "../utils/selectFields.js";
-import { findAttempt, recordFailure, resetFailures } from '../models/userModel.js';
+import { recordFailure, resetFailures } from '../models/loginAttemptModel.js';
 import { remainingCooldown, sendLoginCooldown } from '../middleware/rateLimiterMiddleware.js';
 
 const registrationFields = [
@@ -87,11 +87,9 @@ export const login = asyncHandler(async (request, response) => {
     );
   }
 
-  const user = await User.findOne({ email }).select("+passwordHash");
+  const user = await User.findOne({ email, deletedAt: null }).select("+passwordHash +sessionVersion");
 
-  const passwordMatches = user
-    ? await bcrypt.compare(password, user.passwordHash)
-    : false;
+  const passwordMatches = await bcrypt.compare(password, user?.passwordHash ?? '$2b$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW');
   if (!user || !passwordMatches) {
     const state = await recordFailure(email, new Date());
     const seconds = remainingCooldown(state, Date.now());
@@ -106,8 +104,6 @@ export const login = asyncHandler(async (request, response) => {
   }
 
   await resetFailures(email, new Date());
-  const seconds = remainingCooldown(await findAttempt(email), Date.now());
-  if (seconds) return sendLoginCooldown(response, seconds);
   // Associate the successful sign-in with the completed request's audit entry.
   request.user = user;
 
@@ -115,21 +111,14 @@ export const login = asyncHandler(async (request, response) => {
     success: true,
     message: "Signed in successfully.",
     data: {
-      token: jwt.sign(
-        { sub: String(user._id), role: user.role },
-        JWT_SECRET,
-        {
-          expiresIn: JWT_EXPIRES_IN,
-          issuer: 'bulldogs-exchange-api',
-          audience: 'bulldogs-exchange-client',
-        },
-      ),
+      token: await issueAccessToken(user),
       user: serializeUser(user),
     },
   });
 });
 
-export const logout = asyncHandler(async (_request, response) => {
+export const logout = asyncHandler(async (request, response) => {
+  await Session.deleteOne({ tokenHash: request.tokenHash });
   response.status(HttpStatus.OK).json({
     success: true,
     message: 'Signed out successfully.',
@@ -187,13 +176,15 @@ export const changeMyPassword = asyncHandler(async (request, response) => {
   const user = await User.findById(request.user._id).select("+passwordHash");
   if (!user || !(await user.matchesPassword(currentPassword))) {
     throw new ApiError(
-      HttpStatus.UNAUTHORIZED,
+      HttpStatus.BAD_REQUEST,
       "Current password is incorrect.",
     );
   }
 
-  user.passwordHash = await bcrypt.hash(newPassword, 12);
-  await user.save();
+  const changed = await User.updateOne({ _id: user._id, passwordHash: user.passwordHash }, {
+    $set: { passwordHash: await bcrypt.hash(newPassword, 12) }, $inc: { sessionVersion: 1 },
+  }, { runValidators: true });
+  if (changed.modifiedCount !== 1) throw new ApiError(409, 'Your password changed. Please sign in again.');
 
   response.status(HttpStatus.OK).json({
     success: true,
@@ -207,7 +198,7 @@ export const listUsers = asyncHandler(async (request, response) => {
     request.query.page,
     request.query.limit,
   );
-  const filter = {};
+  const filter = { deletedAt: null };
 
   if (request.query.role) {
     if (!Object.values(UserRole).includes(request.query.role)) {
@@ -265,7 +256,7 @@ export const listUsers = asyncHandler(async (request, response) => {
 export const getUser = asyncHandler(async (request, response) => {
   assertUserCanAccessTarget(request, request.params.id);
 
-  const user = await User.findById(request.params.id)
+  const user = await User.findOne({ _id: request.params.id, deletedAt: null })
     .select(userProjection)
     .lean();
   if (!user) {
@@ -284,8 +275,8 @@ export const updateUser = asyncHandler(async (request, response) => {
     request.user.role === UserRole.ADMIN
       ? adminEditableFields
       : profileFields;
-  const user = await User.findByIdAndUpdate(
-    request.params.id,
+  const user = await User.findOneAndUpdate(
+    { _id: request.params.id, deletedAt: null },
     { $set: selectFields(request.body, fields) },
     { new: true, runValidators: true },
   )
@@ -306,7 +297,7 @@ export const setUserStatus = asyncHandler(async (request, response) => {
   if (typeof request.body.isActive !== "boolean") {
     throw new ApiError(HttpStatus.BAD_REQUEST, "isActive must be a boolean.");
   }
-  const targetUser = await User.findById(request.params.id).select("role").lean();
+  const targetUser = await User.findOne({ _id: request.params.id, deletedAt: null }).select("role").lean();
   if (!targetUser) {
     throw new ApiError(HttpStatus.NOT_FOUND, "User was not found.");
   }
@@ -317,9 +308,9 @@ export const setUserStatus = asyncHandler(async (request, response) => {
     );
   }
 
-  const user = await User.findByIdAndUpdate(
-    request.params.id,
-    { $set: { isActive: request.body.isActive } },
+  const user = await User.findOneAndUpdate(
+    { _id: request.params.id, deletedAt: null },
+    { $set: { isActive: request.body.isActive }, $inc: { sessionVersion: 1 } },
     { new: true, runValidators: true },
   )
     .select(userProjection)
@@ -343,7 +334,7 @@ export const deleteUser = asyncHandler(async (request, response) => {
     );
   }
 
-  const user = await User.findByIdAndDelete(request.params.id).select(
+  const user = await User.findOneAndUpdate({ _id: request.params.id, deletedAt: null, role: { $ne: UserRole.ADMIN } }, { $set: { deletedAt: new Date(), isActive: false }, $inc: { sessionVersion: 1 } }).select(
     "_id firstName lastName email role",
   );
 
@@ -353,7 +344,7 @@ export const deleteUser = asyncHandler(async (request, response) => {
 
   response.status(HttpStatus.OK).json({
     success: true,
-    message: "User deleted successfully.",
+    message: "User archived successfully. Order history is retained.",
     count: 1,
     data: { _id: user._id, deleted: true },
   });

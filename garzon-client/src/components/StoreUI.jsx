@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useBlocker } from "react-router-dom";
-import studyKit from "../assets/img/daily_essentials.png";
 
 /** @typedef {{title: string, message: string, confirmLabel: string, cancelLabel?: string, destructive?: boolean, onConfirm: () => unknown | Promise<unknown>, onCancel?: () => void}} ConfirmationOptions */
 
@@ -227,46 +226,19 @@ const serverOrigin = new URL(apiBaseUrl, window.location.origin).origin;
 const resolveImageSource = (source) =>
   source?.startsWith("/uploads/") ? `${serverOrigin}${source}` : source;
 
-const getLocalProductImage = (product) => {
-  const searchable =
-    `${product?.sku ?? ""} ${product?.name ?? ""}`.toLowerCase();
-  if (searchable.includes("scarf")) return "/products/nu_scarf_v2.png";
-  if (searchable.includes("hoodie")) return "/products/nu_hoodie.png";
-  if (searchable.includes("sweatshirt") || searchable.includes("sweat shirt"))
-    return "/products/nu_sweatshirt.png";
-  if (searchable.includes("varsity") || searchable.includes("jacket"))
-    return "/products/nu_varsity_jacket.png";
-  if (searchable.includes("cap")) return "/products/nu_est_cap.png";
-  if (searchable.includes("baller")) return "/products/nu_baller.png";
-  if (searchable.includes("study") || searchable.includes("-stu-"))
-    return studyKit;
-  if (searchable.includes("v2") || searchable.includes("app-002"))
-    return "/products/nu_athletic_v2_tshirt.png";
-  if (searchable.includes("-acc-")) return "/products/nu_scarf_v2.png";
-  return "/products/nu_athletic_v1_tshirt.png";
-};
-
 export const ProductImage = ({
   product,
   className = "",
   alt = product?.name ?? "Product",
 }) => {
-  const fallback = getLocalProductImage(product);
   const savedSource = resolveImageSource(
     product?.images?.find((image) => typeof image === "string" && image.trim()),
   );
-  const [source, setSource] = useState(savedSource || fallback);
-
-  useEffect(() => setSource(savedSource || fallback), [fallback, savedSource]);
-
-  return (
-    <img
-      src={source}
-      alt={alt}
-      className={className}
-      onError={() => source !== fallback && setSource(fallback)}
-    />
-  );
+  const [failedSource, setFailedSource] = useState(null);
+  if (!savedSource || failedSource === savedSource) {
+    return <span role="img" aria-label={`${alt}: image unavailable`} className={`flex items-center justify-center bg-slate-100 p-3 text-center text-xs text-slate-500 ${className}`}>Image unavailable</span>;
+  }
+  return <img src={savedSource} alt={alt} className={className} onError={() => setFailedSource(savedSource)} />;
 };
 
 const buttonVariants = {

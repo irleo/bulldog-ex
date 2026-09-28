@@ -26,7 +26,7 @@ export const validateRequest = (request, _response, next) => {
     validateQuery(request.query);
     if (
       request.is("multipart/form-data") &&
-      !/^\/api\/v1\/products(?:\/[a-f\d]{24})?\/?(?:\?|$)/i.test(
+      !/^\/api\/v1\/products(?:\/[a-f\d]{24}(?:\/upload-image)?)?\/?(?:\?|$)/i.test(
         request.originalUrl,
       )
     ) {

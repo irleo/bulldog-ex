@@ -41,7 +41,9 @@ const orderItemSchema = new mongoose.Schema(
     unitPrice: {
       type: Number,
       required: [true, "Order item unit price is required."],
-      min: [0, "Order item unit price cannot be negative."],
+      min: [0.01, "Order item unit price must be at least 0.01."],
+      max: 1000000,
+      validate: { validator: value => Number.isFinite(value) && Math.abs(value * 100 - Math.round(value * 100)) < 0.000001, message: "Invalid unit price." },
     },
     quantity: {
       type: Number,
@@ -56,7 +58,7 @@ const orderItemSchema = new mongoose.Schema(
     subtotal: {
       type: Number,
       required: true,
-      min: [0, "Order item subtotal cannot be negative."],
+      min: [0.01, "Order item subtotal must be positive."],
     },
   },
   { _id: false, strict: "throw" },
@@ -70,6 +72,7 @@ const orderSchema = new mongoose.Schema(
       default: () =>
         `ORD-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
     },
+    checkoutKey: { type: String, maxlength: 64, select: false },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -79,7 +82,7 @@ const orderSchema = new mongoose.Schema(
       type: [orderItemSchema],
       required: true,
       validate: {
-        validator: (items) => Array.isArray(items) && items.length > 0,
+        validator: (items) => Array.isArray(items) && items.length > 0 && items.length <= 100,
         message: "An order must contain at least one item.",
       },
     },
@@ -109,7 +112,7 @@ const orderSchema = new mongoose.Schema(
     totalAmount: {
       type: Number,
       required: true,
-      min: [0, "Order total cannot be negative."],
+      min: [0.01, "Order total must be positive."],
     },
   },
   {
@@ -133,6 +136,7 @@ orderSchema.pre("validate", function calculateTotals() {
 });
 
 orderSchema.index({ orderNumber: 1 }, { unique: true });
+orderSchema.index({ userId: 1, checkoutKey: 1 }, { unique: true, partialFilterExpression: { checkoutKey: { $type: 'string' } } });
 orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ paymentStatus: 1, createdAt: -1 });

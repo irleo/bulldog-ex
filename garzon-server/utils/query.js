@@ -22,7 +22,9 @@ export const parsePagination = (rawPage, rawLimit) => {
     throw new ApiError(HttpStatus.BAD_REQUEST, 'limit must be between 1 and 100.');
   }
 
-  return { page, limit, skip: (page - 1) * limit };
+  const skip = (page - 1) * limit;
+  if (skip > 10000) throw new ApiError(400, 'Narrow your search to view more results.');
+  return { page, limit, skip };
 };
 
 /**

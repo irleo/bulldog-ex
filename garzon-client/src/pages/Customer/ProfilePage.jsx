@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiRequest } from "../../api/apiClient.js";
+import { apiRequest, clearStoredToken } from "../../api/apiClient.js";
 import { useAuth } from "../../auth/authContext.js";
 import { notify } from "../../utils/toast.js";
 import {
@@ -73,6 +73,7 @@ const ProfilePage = () => {
       });
       formElement.reset();
       markSaved();
+      clearStoredToken();
       notify.success("Password changed successfully.");
     } catch (requestError) {
       notify.error(requestError.message);

@@ -25,6 +25,8 @@ const stepLabels = {
 };
 const ReviewStars = ({ rating }) => <span className="flex gap-0.5" aria-label={`${rating} out of 5 stars`}>{[1, 2, 3, 4, 5].map((value) => <StoreIcon key={value} name="star" className={`h-3.5 w-3.5 ${value <= Number(rating) ? "fill-[#d4af37] text-[#d4af37]" : "text-[#d7dce7]"}`} />)}</span>;
 
+const formatAmount = value => typeof value === 'number' && Number.isFinite(value) && value > 0 ? peso.format(value) : 'Unavailable';
+
 const OrdersPage = () => {
   const { confirm, confirmation } = useConfirmation();
   const { formRef, onFormChange, markSaved, guardDiscard } = useUnsavedForm(confirm);
@@ -199,7 +201,7 @@ const OrdersPage = () => {
                     })}
                   </span>
                   <strong className="text-[#0b1b46]">
-                    {peso.format(order.totalAmount ?? 0)}
+                    {formatAmount(order.totalAmount)}
                   </strong>
                 </div>
               </button>
@@ -258,12 +260,10 @@ const OrdersPage = () => {
                   className="flex justify-between gap-3 py-3 text-sm"
                 >
                   <span>
-                    <strong>{item.quantity}×</strong> {item.productName}
+                    <strong>{Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 100 ? item.quantity : "Invalid quantity"}×</strong> {item.productName}
                   </span>
                   <span className="text-[#64748b]">
-                    {peso.format(
-                      item.subtotal ?? item.unitPrice * item.quantity,
-                    )}
+                    {formatAmount(item.subtotal)}
                   </span>
                 </li>
               ))}
@@ -275,7 +275,7 @@ const OrdersPage = () => {
             <div className="font-display mt-3 flex justify-between border-t border-[#e3e7f0] pt-3 font-extrabold">
               <span>Total</span>
               <span className="text-[#0b1b46]">
-                {peso.format(selected.totalAmount ?? 0)}
+                {formatAmount(selected.totalAmount)}
               </span>
             </div>
             {selectedStatus === "pending" && (

@@ -11,7 +11,9 @@ export class ApiError extends Error {
   }
 }
 
-/** Converts rejected async request handlers into Express errors. */
+/** @typedef {import('express').Request<Record<string, string>> & {user: InstanceType<typeof import('../models/userModel.js').default>, tokenHash: string}} AppRequest */
+/** Converts rejected async request handlers into Express errors.
+ * @param {(request: AppRequest, response: import('express').Response, next: import('express').NextFunction) => unknown} handler */
 export const asyncHandler = (handler) => (request, response, next) => {
   Promise.resolve(handler(request, response, next)).catch(next);
 };

@@ -12,6 +12,12 @@ const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(Boolean(getStoredToken()));
 
   useEffect(() => {
+    const ended = () => setUser(null);
+    window.addEventListener('session-ended', ended);
+    return () => window.removeEventListener('session-ended', ended);
+  }, []);
+
+  useEffect(() => {
     if (!getStoredToken()) return;
     apiRequest("/users/me/session")
       .then((payload) => setUser(payload.data.user))
@@ -48,9 +54,10 @@ const AuthProvider = ({ children }) => {
             await apiRequest("/users/logout", { method: "POST" });
         } catch (error) {
           if (error.status !== 401) throw error;
+        } finally {
+          clearStoredToken();
+          setUser(null);
         }
-        clearStoredToken();
-        setUser(null);
       },
       refreshUser: async () => {
         const payload = await apiRequest("/users/me/session");

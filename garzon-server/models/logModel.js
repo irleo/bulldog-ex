@@ -14,6 +14,7 @@ const LogSchema = new mongoose.Schema(
     },
     statusCode: { type: Number, required: true, min: 100, max: 599 },
     durationMs: { type: Number, required: true, min: 0 },
+    expiresAt: { type: Date, default: () => new Date(Date.now() + 90 * 86400000) },
   },
   {
     timestamps: true,
@@ -24,4 +25,5 @@ const LogSchema = new mongoose.Schema(
 );
 
 LogSchema.index({ createdAt: -1 });
+LogSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 export default mongoose.model("Log", LogSchema, "auditLogs");
