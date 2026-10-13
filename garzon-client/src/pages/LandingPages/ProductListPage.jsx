@@ -36,16 +36,20 @@ const ProductListPage = () => {
   const [pagination, setPagination] = useState({ total: 0, pages: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [categoriesError, setCategoriesError] = useState("");
 
   useEffect(() => {
+    let active = true;
     apiRequest("/categories?limit=100")
       .then((payload) =>
-        setCategories(Array.isArray(payload.data) ? payload.data : []),
+        active && setCategories(Array.isArray(payload.data) ? payload.data : []),
       )
-      .catch((requestError) => setError(requestError.message));
+      .catch((requestError) => { if (active) setCategoriesError(requestError.message); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
+    let active = true;
     const timer = setTimeout(async () => {
       const query = new URLSearchParams({
         page: String(page),
@@ -57,15 +61,16 @@ const ProductListPage = () => {
       setError("");
       try {
         const payload = await apiRequest(`/products?${query}`);
+        if (!active) return;
         setProducts(Array.isArray(payload.data) ? payload.data : []);
         setPagination(payload.pagination ?? { total: 0, pages: 0 });
       } catch (requestError) {
-        setError(requestError.message);
+        if (active) setError(requestError.message);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }, 250);
-    return () => clearTimeout(timer);
+    return () => { active = false; clearTimeout(timer); };
   }, [category, page, search]);
 
   return (
@@ -84,6 +89,7 @@ const ProductListPage = () => {
           value={search}
           onChange={(event) => {
             setSearch(event.target.value);
+            setLoading(true);
             setPage(1);
           }}
           placeholder="Search products, SKU, or supplier"
@@ -93,7 +99,9 @@ const ProductListPage = () => {
       <div className="mb-7 flex flex-wrap gap-2">
         <button
           onClick={() => {
+            if (category === "") return;
             setCategory("");
+            setLoading(true);
             setPage(1);
           }}
           className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${category === "" ? "border-[#0b1b46] bg-[#0b1b46] text-white" : "border-[#e3e7f0] bg-white text-[#101828]"}`}
@@ -104,7 +112,9 @@ const ProductListPage = () => {
           <button
             key={item._id}
             onClick={() => {
+              if (category === item._id) return;
               setCategory(item._id);
+              setLoading(true);
               setPage(1);
             }}
             className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${category === item._id ? "border-[#0b1b46] bg-[#0b1b46] text-white" : "border-[#e3e7f0] bg-white text-[#101828]"}`}
@@ -121,10 +131,11 @@ const ProductListPage = () => {
           {error}
         </p>
       )}
+      {categoriesError && <p role="alert" className="mb-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">Category filters could not be loaded: {categoriesError}</p>}
       <p className="mb-3 text-xs text-[#64748b]">
         {loading
           ? "Loading catalog…"
-          : `${pagination.total} item${pagination.total === 1 ? "" : "s"} found`}
+          : error ? "Catalog could not be loaded." : `${pagination.total} item${pagination.total === 1 ? "" : "s"} found`}
       </p>
       {loading ? (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -135,7 +146,7 @@ const ProductListPage = () => {
             />
           ))}
         </div>
-      ) : products.length ? (
+      ) : error ? null : products.length ? (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {products.map((product) => <ProductCard key={product._id} product={product} />)}
         </div>
@@ -144,12 +155,12 @@ const ProductListPage = () => {
           No products match your search or category.
         </div>
       )}
-      {!loading && (
+      {!loading && !error && (
         <StorePagination
           page={page}
           pageSize={12}
           total={pagination.total}
-          onPageChange={setPage}
+          onPageChange={(nextPage) => { if (nextPage !== page) { setLoading(true); setPage(nextPage); } }}
         />
       )}
     </StorePage>

@@ -8,6 +8,8 @@ This repository contains **BulldogEx Shop**, a full-stack campus e-commerce appl
 
 Deployment branch: `deployment`.
 
+Live site: [BulldogEx Shop](https://bulldogex-client.vercel.app).
+
 Use these accounts to review the application's admin and customer workflows:
 
 | Role | Email | Password |
@@ -303,12 +305,3 @@ garzon-webprog-longexam/
     |   `-- validation.js             # Authoritative API input validation
     `-- uploads/                      # Server-managed product images
 ```
-
-## Notes
-- Product and category data are loaded from the backend rather than mock content.
-- Public registration always creates a customer account.
-- Client-side route guards improve navigation but do not replace server authorization.
-- Do not commit either `.env` file or expose `JWT_SECRET` and database credentials.
-- Activity 5 middleware, cooldown policy, and verification commands are documented in `garzon-server/README.md`.
-
-

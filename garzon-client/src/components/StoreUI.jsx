@@ -446,6 +446,14 @@ export const StoreCard = ({ children, className = "", accent = true }) => (
   </div>
 );
 
+/** @param {{label?: string}} props */
+export const LoadingState = ({ label = "Loading…" }) => (
+  <div role="status" aria-live="polite" className="flex items-center justify-center gap-3 rounded-xl border border-[#e3e7f0] bg-white p-8 text-sm text-[#64748b]">
+    <span aria-hidden="true" className="h-5 w-5 animate-spin motion-reduce:animate-none rounded-full border-2 border-[#e3e7f0] border-t-[#0b1b46]" />
+    {label}
+  </div>
+);
+
 export const StorePage = ({ children, className = "" }) => (
   <div
     className={`w-full px-6 py-8 sm:px-8 lg:px-10 xl:px-14 ${className}`.trim()}

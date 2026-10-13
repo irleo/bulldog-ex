@@ -3,6 +3,7 @@ import { apiRequest } from "../../api/apiClient.js";
 import { notify } from "../../utils/toast.js";
 import {
   useConfirmation,
+  LoadingState,
   useUnsavedForm,
   StatusPill,
   StoreCard,
@@ -41,12 +42,17 @@ const OrdersPage = () => {
   const [claiming, setClaiming] = useState(false);
   const [reviewOrder, setReviewOrder] = useState(null);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [ordersError, setOrdersError] = useState("");
+  const [reviewsError, setReviewsError] = useState("");
+  const error = activeTab === "orders" ? ordersError : reviewsError;
 
   useEffect(() => {
+    let active = true;
     setOrdersLoading(true);
     apiRequest(`/orders/mine?page=${orderPage}&limit=4`)
       .then((ordersPayload) => {
+        if (!active) return;
+        setOrdersError("");
         const records = Array.isArray(ordersPayload.data)
           ? ordersPayload.data
           : [];
@@ -54,19 +60,24 @@ const OrdersPage = () => {
         setSelectedId(records[0]?._id ?? "");
         setOrderPagination(ordersPayload.pagination ?? { total: 0 });
       })
-      .catch((requestError) => setError(requestError.message))
-      .finally(() => setOrdersLoading(false));
+      .catch((requestError) => { if (active) setOrdersError(requestError.message); })
+      .finally(() => { if (active) setOrdersLoading(false); });
+    return () => { active = false; };
   }, [orderPage]);
 
   useEffect(() => {
+    let active = true;
     apiRequest("/reviews/mine?limit=100")
       .then((reviewsPayload) => {
+        if (!active) return;
+        setReviewsError("");
         setReviews(
           Array.isArray(reviewsPayload.data) ? reviewsPayload.data : [],
         );
       })
-      .catch((requestError) => setError(requestError.message))
-      .finally(() => setReviewsLoading(false));
+      .catch((requestError) => { if (active) setReviewsError(requestError.message); })
+      .finally(() => { if (active) setReviewsLoading(false); });
+    return () => { active = false; };
   }, []);
 
   const selected =
@@ -165,8 +176,8 @@ const OrdersPage = () => {
         </p>
       )}
       {(activeTab === "orders" ? ordersLoading : reviewsLoading) ? (
-        <p className="text-sm text-[#64748b]">Loading activity…</p>
-      ) : activeTab === "reviews" ? (
+        <LoadingState label={activeTab === "orders" ? "Loading orders…" : "Loading reviews…"} />
+      ) : error ? null : activeTab === "reviews" ? (
         reviews.length === 0 ? <StoreCard accent={false} className="p-10 text-center"><StoreIcon name="star" className="mx-auto h-8 w-8 text-[#a9b4d6]" /><p className="mt-3 text-sm text-[#64748b]">No submitted reviews yet.</p></StoreCard> : <div className="grid gap-3 md:grid-cols-2">{reviews.map((review) => <StoreCard key={review._id} accent={false} className="p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-display text-sm font-bold">{review.productId?.name ?? "Product"}</h2><p className="mt-1 text-xs text-[#64748b]">{new Date(review.createdAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</p></div><ReviewStars rating={review.rating} /></div><p className="mt-4 text-sm leading-6 text-[#101828]">{review.content}</p><div className="mt-4 border-t border-[#e3e7f0] pt-3 text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">{review.isHidden ? "Hidden" : "Published"}</div></StoreCard>)}</div>
       ) : orders.length === 0 ? (
         <StoreCard accent={false} className="p-10 text-center">
@@ -303,7 +314,7 @@ const OrdersPage = () => {
           page={orderPage}
           pageSize={4}
           total={orderPagination.total}
-          onPageChange={setOrderPage}
+          onPageChange={(nextPage) => { if (nextPage !== orderPage) { setOrdersLoading(true); setOrderPage(nextPage); } }}
         />
         </>
       )}

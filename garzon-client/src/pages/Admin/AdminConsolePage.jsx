@@ -5,6 +5,7 @@ import { notify } from "../../utils/toast.js";
 import ProductImageInput from '../../components/ProductImageInput.jsx';
 import {
   useConfirmation,
+  LoadingState,
   useUnsavedForm,
   ProductImage,
   StatusPill,
@@ -120,6 +121,7 @@ const AdminConsolePage = ({ section }) => {
   const [saving, setSaving] = useState(false);
   const [records, setRecords] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [categoriesError, setCategoriesError] = useState("");
   const [selected, setSelected] = useState(null);
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [userModalOpen, setUserModalOpen] = useState(false);
@@ -140,6 +142,9 @@ const AdminConsolePage = ({ section }) => {
     role: "all",
   });
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadedEndpoint, setLoadedEndpoint] = useState("");
+  const requestVersion = useRef(0);
   const details = sectionDetails[section];
 
   const params = new URLSearchParams({
@@ -180,6 +185,8 @@ const AdminConsolePage = ({ section }) => {
     users: "/users",
   }[section];
   const endpoint = `${endpointBase}?${params.toString()}`;
+  const pending = loading || loadedEndpoint !== endpoint;
+  const visibleRecords = pending || error ? [] : records;
 
   const applyRecordsPayload = useCallback(
     (payload) => {
@@ -204,26 +211,35 @@ const AdminConsolePage = ({ section }) => {
   );
 
   const load = useCallback(async () => {
+    const version = ++requestVersion.current;
+    setLoading(true);
+    setError("");
     try {
       const payload = await apiRequest(endpoint);
-      applyRecordsPayload(payload);
+      if (version === requestVersion.current) applyRecordsPayload(payload);
     } catch (requestError) {
-      setError(requestError.message);
+      if (version === requestVersion.current) setError(requestError.message);
+    } finally {
+      if (version === requestVersion.current) {
+        setLoadedEndpoint(endpoint);
+        setLoading(false);
+      }
     }
   }, [applyRecordsPayload, endpoint]);
 
   useEffect(() => {
-    apiRequest(endpoint)
-      .then(applyRecordsPayload)
-      .catch((requestError) => setError(requestError.message));
-  }, [applyRecordsPayload, endpoint]);
+    void load();
+    return () => { requestVersion.current += 1; };
+  }, [load]);
 
   useEffect(() => {
+    let active = true;
     if (section === "products") {
       apiRequest("/categories?limit=100")
-        .then((payload) => setCategories(payload.data))
-        .catch((requestError) => setError(requestError.message));
+        .then((payload) => { if (active) { setCategories(payload.data); setCategoriesError(""); } })
+        .catch((requestError) => { if (active) setCategoriesError(requestError.message); });
     }
+    return () => { active = false; };
   }, [section]);
 
   const closeEditor = useCallback(() => {
@@ -495,7 +511,7 @@ const AdminConsolePage = ({ section }) => {
                     Cancel
                   </button>
                   <button disabled={saving} className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">
-                    {selected ? "Save changes" : "Create product"}
+                    {saving ? "Saving…" : selected ? "Save changes" : "Create product"}
                   </button>
                 </div>
               </form>
@@ -532,7 +548,7 @@ const AdminConsolePage = ({ section }) => {
           </select>
         </FilterBar>
         <div className="grid gap-2.5">
-        {records.map((product) => (
+        {visibleRecords.map((product) => (
             <StoreCard
               key={product._id}
               accent={false}
@@ -585,7 +601,7 @@ const AdminConsolePage = ({ section }) => {
               </div>
             </StoreCard>
           ))}
-        {records.length === 0 && (
+        {!pending && !error && records.length === 0 && (
             <StoreCard
               accent={false}
               className="p-10 text-center text-sm text-[#64748b]"
@@ -597,7 +613,7 @@ const AdminConsolePage = ({ section }) => {
       <StorePagination
         page={pagination.page}
         pageSize={pageSizes.products}
-        total={pagination.total}
+        total={pending || error ? 0 : pagination.total}
           onPageChange={setPage}
         />
       </>
@@ -630,7 +646,7 @@ const AdminConsolePage = ({ section }) => {
             <option value="cancelled">Cancelled</option>
           </select>
         </FilterBar>
-        {records.length === 0 ? (
+        {pending || error ? null : records.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-12 text-center">
             <h2 className="text-lg font-bold text-slate-700">
               No orders found
@@ -664,7 +680,7 @@ const AdminConsolePage = ({ section }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e3e7f0]">
-            {records.map((order, index) => {
+            {visibleRecords.map((order, index) => {
                   const status =
                     typeof order?.status === "string" && order.status
                       ? order.status
@@ -762,7 +778,7 @@ const AdminConsolePage = ({ section }) => {
         <StorePagination
           page={pagination.page}
           pageSize={pageSizes.orders}
-          total={pagination.total}
+          total={pending || error ? 0 : pagination.total}
           onPageChange={setPage}
         />
       </>
@@ -790,7 +806,7 @@ const AdminConsolePage = ({ section }) => {
                 </label>
                 <div className="flex justify-end gap-2 border-t border-[#e3e7f0] pt-4">
                   <button type="button" onClick={closeEditor} className="rounded-lg border border-[#e3e7f0] px-5 py-2.5 text-sm font-semibold">Cancel</button>
-                  <button disabled={saving} className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">Save changes</button>
+                  <button disabled={saving} className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">{saving ? "Saving…" : "Save changes"}</button>
                 </div>
               </form>
             </div>
@@ -814,7 +830,7 @@ const AdminConsolePage = ({ section }) => {
           </select>
         </FilterBar>
         <div className="grid gap-3">
-          {records.map((review) => (
+          {visibleRecords.map((review) => (
             <StoreCard
               key={review._id}
               accent={review.isFlagged}
@@ -896,7 +912,7 @@ const AdminConsolePage = ({ section }) => {
               </div>
             </StoreCard>
           ))}
-          {records.length === 0 && (
+          {!pending && !error && records.length === 0 && (
             <StoreCard
               accent={false}
               className="p-10 text-center text-sm text-[#64748b]"
@@ -908,7 +924,7 @@ const AdminConsolePage = ({ section }) => {
         <StorePagination
           page={pagination.page}
           pageSize={pageSizes.reviews}
-          total={pagination.total}
+          total={pending || error ? 0 : pagination.total}
           onPageChange={setPage}
         />
       </>
@@ -952,7 +968,7 @@ const AdminConsolePage = ({ section }) => {
                 <input name="phone" defaultValue={selected.phone ?? ""} className={fieldClass} placeholder="Phone number" />
                 <div className="flex justify-end gap-2 border-t border-[#e3e7f0] pt-4">
                   <button type="button" onClick={closeEditor} className="rounded-lg border border-[#e3e7f0] px-5 py-2.5 text-sm font-semibold">Cancel</button>
-                  <button disabled={saving} className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">Save changes</button>
+                  <button disabled={saving} className="rounded-lg bg-[#0b1b46] px-5 py-2.5 text-sm font-semibold text-white">{saving ? "Saving…" : "Save changes"}</button>
                 </div>
               </form>
             </div>
@@ -984,7 +1000,7 @@ const AdminConsolePage = ({ section }) => {
             <option value="false">Inactive</option>
           </select>
         </FilterBar>
-        {records.length === 0 ? (
+        {pending || error ? null : records.length === 0 ? (
           <StoreCard
             accent={false}
             className="p-10 text-center text-sm text-[#64748b]"
@@ -1009,7 +1025,7 @@ const AdminConsolePage = ({ section }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e3e7f0]">
-                {records.map((account) => (
+                {visibleRecords.map((account) => (
                   <tr key={account._id}>
                     <td className="px-4 py-3 font-semibold">
                       {account.firstName} {account.lastName}
@@ -1070,7 +1086,7 @@ const AdminConsolePage = ({ section }) => {
         <StorePagination
           page={pagination.page}
           pageSize={pageSizes.users}
-          total={pagination.total}
+          total={pending || error ? 0 : pagination.total}
           onPageChange={setPage}
         />
       </>
@@ -1101,7 +1117,7 @@ const AdminConsolePage = ({ section }) => {
             )}
             <StoreCard className="px-5 py-3">
               <span className="font-display block text-2xl font-extrabold text-[#0b1b46]">
-                {pagination.total}
+                {pending || error ? "—" : pagination.total}
               </span>
               <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
                 Total records
@@ -1111,13 +1127,20 @@ const AdminConsolePage = ({ section }) => {
         }
       />
       {error && (
-        <p className="mb-5 rounded-xl bg-red-50 p-4 text-red-700">{error}</p>
+        <div role="alert" className="mb-5 rounded-xl bg-red-50 p-4 text-red-700">
+          {error} <button type="button" onClick={() => void load()} className="ml-3 font-semibold underline">Retry</button>
+        </div>
       )}
+      {section === "products" && categoriesError && <p role="alert" className="mb-5 rounded-xl bg-red-50 p-4 text-red-700">Categories could not be loaded: {categoriesError}</p>}
 
+      {pending && <LoadingState label={`Loading ${section}…`} />}
+      {saving && <p role="status" className="my-3 text-sm text-[#64748b]">Saving changes…</p>}
+      <fieldset disabled={saving} className="min-w-0" aria-busy={pending || saving}>
       {section === "products" && renderProducts()}
       {section === "orders" && renderOrders()}
       {section === "reviews" && renderReviews()}
       {section === "users" && renderUsers()}
+      </fieldset>
     </div>
   );
 };

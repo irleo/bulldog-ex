@@ -6,6 +6,7 @@ import { useAuth } from "../../auth/authContext.js";
 import { notify } from "../../utils/toast.js";
 import {
   useConfirmation,
+  LoadingState,
   ProductImage,
   StoreCard,
   StoreIcon,
@@ -22,6 +23,9 @@ const CartPage = () => {
   const [cart, setCart] = useState(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [operation, setOperation] = useState("");
   const { user } = useAuth();
   const { confirm, confirmation } = useConfirmation();
   const inFlight = useRef(false);
@@ -33,15 +37,19 @@ const CartPage = () => {
     return saved;
   };
   useEffect(() => {
+    let active = true;
     apiRequest("/carts")
-      .then((payload) => setCart(payload.data))
-      .catch((requestError) => setError(requestError.message));
+      .then((payload) => { if (active) setCart(payload.data); })
+      .catch((requestError) => { if (active) setLoadError(requestError.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, []);
 
   const mutate = async (path, options, reportError = true) => {
     if (inFlight.current) return false;
     inFlight.current = true;
     setSubmitting(true);
+    setOperation("Updating cart…");
     try {
       const payload = await apiRequest(path, options);
       setCart(payload.data);
@@ -53,6 +61,7 @@ const CartPage = () => {
     } finally {
       inFlight.current = false;
       setSubmitting(false);
+      setOperation("");
     }
   };
 
@@ -84,11 +93,12 @@ const CartPage = () => {
         if (inFlight.current) return false;
         inFlight.current = true;
         setSubmitting(true);
+        setOperation("Placing order…");
         try {
           const payload = await apiRequest("/orders", { method: "POST", headers: { "Idempotency-Key": checkoutKey() }, body: JSON.stringify({ cartId: cart._id, revision: cart.revision ?? 0 }) });
           setCart((current) => ({ ...current, items: [] }));
           notify.success(`Order ${payload.data.orderNumber} was placed successfully.`);
-        } finally { inFlight.current = false; setSubmitting(false); }
+        } finally { inFlight.current = false; setSubmitting(false); setOperation(""); }
       },
     });
   };
@@ -112,11 +122,14 @@ const CartPage = () => {
           {error}
         </p>
       )}
+      {submitting && <p role="status" className="mb-4 text-sm text-[#64748b]">{operation}</p>}
       <div className="grid gap-8 md:grid-cols-3">
         <div className="space-y-3 md:col-span-2">
-          {!cart ? (
-            <p className="text-sm text-[#64748b]">Loading cart…</p>
-          ) : cart.items.length === 0 ? (
+          {loading ? (
+            <LoadingState label="Loading cart…" />
+          ) : loadError ? (
+            <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{loadError}</p>
+          ) : !cart ? null : cart.items.length === 0 ? (
             <StoreCard accent={false} className="p-10 text-center">
               <StoreIcon
                 name="cart"
@@ -209,7 +222,7 @@ const CartPage = () => {
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-[#64748b]">Subtotal</span>
-              <span>{Number.isFinite(total) ? peso.format(total) : "Unavailable"}</span>
+              <span>{loading || loadError ? "—" : Number.isFinite(total) ? peso.format(total) : "Unavailable"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#64748b]">Service fee</span>
@@ -219,15 +232,16 @@ const CartPage = () => {
           <div className="my-3 border-t border-[#e3e7f0]" />
           <div className="font-display flex justify-between font-extrabold">
             <span>Total</span>
-            <span className="text-[#0b1b46]">{Number.isFinite(total) ? peso.format(total) : "Unavailable"}</span>
+            <span className="text-[#0b1b46]">{loading || loadError ? "—" : Number.isFinite(total) ? peso.format(total) : "Unavailable"}</span>
           </div>
           <button
             onClick={checkout}
             disabled={unavailableItems || !cart?.items.length || !Number.isFinite(total) || total <= 0 || submitting}
+            aria-busy={submitting}
             className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#0b1b46] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <StoreIcon name="shield" className="h-4 w-4" />
-            {submitting ? "Placing order…" : "Place order"}
+            {submitting ? operation : loading ? "Loading cart…" : "Place order"}
           </button>
           <p className="mt-3 text-center text-[11px] leading-5 text-[#64748b]">
             Pickup details come from your saved profile.

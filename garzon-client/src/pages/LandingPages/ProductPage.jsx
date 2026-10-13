@@ -1,9 +1,9 @@
 import { isPrice, isStock } from "../../utils/numbers.js";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest } from "../../api/apiClient.js";
 import { useAuth } from "../../auth/authContext.js";
-import { Button, ProductImage, StoreCard, StoreIcon, StorePage } from "../../components/StoreUI.jsx";
+import { Button, LoadingState, ProductImage, StoreCard, StoreIcon, StorePage } from "../../components/StoreUI.jsx";
 import { notify } from "../../utils/toast.js";
 
 const peso = new Intl.NumberFormat("en-PH", {
@@ -30,20 +30,33 @@ const ProductPage = () => {
   const [reviews, setReviews] = useState([]);
   const [quantity, setQuantity] = useState(1);
   const [loadError, setLoadError] = useState("");
+  const [loadedId, setLoadedId] = useState("");
+  const [adding, setAdding] = useState(false);
+  const addingRef = useRef(false);
 
   useEffect(() => {
+    let active = true;
     Promise.all([
       apiRequest(`/products/${id}`),
       apiRequest(`/reviews?productId=${id}&limit=100`),
     ])
       .then(([productPayload, reviewPayload]) => {
+        if (!active) return;
+        if (!productPayload.data) throw new Error("The product could not be loaded.");
+        setLoadError("");
+        setQuantity(1);
         setProduct(productPayload.data);
         setReviews(Array.isArray(reviewPayload.data) ? reviewPayload.data : []);
       })
-      .catch((requestError) => setLoadError(requestError.message));
+      .catch((requestError) => { if (active) setLoadError(requestError.message); })
+      .finally(() => { if (active) setLoadedId(id); });
+    return () => { active = false; };
   }, [id]);
 
   const addToCart = async () => {
+    if (addingRef.current) return;
+    addingRef.current = true;
+    setAdding(true);
     try {
       await apiRequest("/carts/items", {
         method: "POST",
@@ -54,12 +67,16 @@ const ProductPage = () => {
       );
     } catch (requestError) {
       notify.error(requestError.message);
+    } finally {
+      addingRef.current = false;
+      setAdding(false);
     }
   };
 
-  if (loadError && !product)
+  if (loadedId !== id) return <StorePage><LoadingState label="Loading product…" /></StorePage>;
+  if (loadError)
     return (
-      <div className="w-full px-6 py-16 text-red-700 sm:px-8 lg:px-10 xl:px-14">
+      <div role="alert" className="w-full px-6 py-16 text-red-700 sm:px-8 lg:px-10 xl:px-14">
         {loadError}
       </div>
     );
@@ -118,7 +135,7 @@ const ProductPage = () => {
                 <button
                   onClick={() => setQuantity((value) => Math.max(1, value - 1))}
                   className="grid h-10 w-9 place-items-center"
-                  disabled={quantity <= 1 || !isStock(product.stock) || product.stock < 1}
+                  disabled={adding || quantity <= 1 || !isStock(product.stock) || product.stock < 1}
                   aria-label="Decrease quantity"
                 >
                   <StoreIcon name="minus" className="h-4 w-4" />
@@ -131,7 +148,7 @@ const ProductPage = () => {
                     setQuantity((value) => Math.max(1, Math.min(100, product.stock, value + 1)))
                   }
                   className="grid h-10 w-9 place-items-center"
-                  disabled={!isStock(product.stock) || quantity >= Math.min(100, product.stock)}
+                  disabled={adding || !isStock(product.stock) || quantity >= Math.min(100, product.stock)}
                   aria-label="Increase quantity"
                 >
                   <StoreIcon name="plus" className="h-4 w-4" />
@@ -141,11 +158,12 @@ const ProductPage = () => {
             {user?.role === "customer" ? (
               <button
                 onClick={addToCart}
-                disabled={!isPrice(product.price) || !isStock(product.stock) || product.stock < 1 || quantity > Math.min(100, product.stock)}
+                disabled={adding || !isPrice(product.price) || !isStock(product.stock) || product.stock < 1 || quantity > Math.min(100, product.stock)}
+                aria-busy={adding}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#0b1b46] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
               >
-                <StoreIcon name="cart" className="h-4 w-4" />
-                Add to cart
+                {adding ? <span aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-white/40 border-t-white" /> : <StoreIcon name="cart" className="h-4 w-4" />}
+                {adding ? "Adding to cart…" : "Add to cart"}
               </button>
             ) : (
               <Button to="/auth/signin" className="flex-1">

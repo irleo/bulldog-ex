@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiRequest, clearStoredToken } from "../../api/apiClient.js";
 import { useAuth } from "../../auth/authContext.js";
 import { notify } from "../../utils/toast.js";
@@ -20,6 +20,8 @@ const ProfilePage = () => {
   const { confirm, confirmation } = useConfirmation();
   const { formRef, onFormChange, markSaved, guardDiscard } = useUnsavedForm(confirm);
   const [tab, setTab] = useState("info");
+  const [saving, setSaving] = useState(false);
+  const inFlight = useRef(false);
   const initials =
     `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase();
 
@@ -27,6 +29,9 @@ const ProfilePage = () => {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setSaving(true);
     try {
       await apiRequest("/users/me", {
         method: "PATCH",
@@ -50,6 +55,9 @@ const ProfilePage = () => {
       notify.success("Profile updated successfully.");
     } catch (requestError) {
       notify.error(requestError.message);
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
     }
   };
 
@@ -63,6 +71,9 @@ const ProfilePage = () => {
       notify.error("New password and confirmation do not match.");
       return;
     }
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setSaving(true);
     try {
       await apiRequest("/users/me/password", {
         method: "PATCH",
@@ -77,6 +88,9 @@ const ProfilePage = () => {
       notify.success("Password changed successfully.");
     } catch (requestError) {
       notify.error(requestError.message);
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
     }
   };
 
@@ -95,6 +109,7 @@ const ProfilePage = () => {
         ].map(([key, label]) => (
           <button
             key={key}
+            disabled={saving}
             onClick={() => key !== tab && guardDiscard(() => setTab(key))}
             className={`rounded-full px-4 py-2 text-xs font-semibold ${tab === key ? "bg-[#0b1b46] text-white" : "border border-[#e3e7f0] bg-white text-[#101828]"}`}
           >
@@ -102,6 +117,7 @@ const ProfilePage = () => {
           </button>
         ))}
       </div>
+      <fieldset disabled={saving} aria-busy={saving} className="min-w-0">
       <StoreCard className="p-6">
         {tab === "info" ? (
           <form key="info" ref={formRef} onChange={onFormChange} onSubmit={updateProfile}>
@@ -205,9 +221,9 @@ const ProfilePage = () => {
                 />
               </label>
             </div>
-            <button className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[#0b1b46] px-4 py-2.5 text-sm font-semibold text-white">
+            <button disabled={saving} aria-busy={saving} className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[#0b1b46] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
               <StoreIcon name="edit" className="h-4 w-4" />
-              Save changes
+              {saving ? "Saving…" : "Save changes"}
             </button>
           </form>
         ) : (
@@ -247,12 +263,13 @@ const ProfilePage = () => {
                 className={`${fieldClass} mt-1`}
               />
             </label>
-            <button className="rounded-lg bg-[#0b1b46] px-4 py-2.5 text-sm font-semibold text-white">
-              Update password
+            <button disabled={saving} aria-busy={saving} className="rounded-lg bg-[#0b1b46] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+              {saving ? "Updating password…" : "Update password"}
             </button>
           </form>
         )}
       </StoreCard>
+      </fieldset>
     </StorePage>
   );
 };
