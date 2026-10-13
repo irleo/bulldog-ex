@@ -11,6 +11,8 @@ export function createRequestLimiter(limit, windowMs, message) {
     store: new RequestQuotaStore(windowMs, `quota-${limit}-${windowMs}`),
     standardHeaders: "draft-8",
     legacyHeaders: false,
+    // Vercel client IP is validated explicitly before this middleware.
+    validate: { xForwardedForHeader: process.env.VERCEL !== "1" },
     handler: (_request, response) => {
       const retryAfterSeconds =
         Number(response.getHeader("Retry-After")) || Math.ceil(windowMs / 1000);

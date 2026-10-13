@@ -92,6 +92,7 @@ const CartPage = () => {
       },
     });
   };
+  const unavailableItems = cart?.items.some(item => !item.productId?.isActive || !isPrice(item.productId?.price) || !isStock(item.productId?.stock) || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100 || item.quantity > item.productId.stock) ?? false;
   const total =
     cart?.items.reduce(
       (sum, item) => sum + (isPrice(item.productId?.price) && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 100 ? item.productId.price : NaN) * item.quantity,
@@ -149,6 +150,7 @@ const CartPage = () => {
                     <h2 className="font-display text-sm font-bold">
                       {product?.name ?? "Unavailable product"}
                     </h2>
+                    {product?.stock === 0 && <p className="text-xs font-semibold text-red-700">Out of Stock — remove this item to check out.</p>}
                     <p className="mt-0.5 text-xs text-[#64748b]">
                       {isPrice(product?.price) ? peso.format(product.price) : "Unavailable"} each
                     </p>
@@ -221,7 +223,7 @@ const CartPage = () => {
           </div>
           <button
             onClick={checkout}
-            disabled={!cart?.items.length || !Number.isFinite(total) || total <= 0 || submitting}
+            disabled={unavailableItems || !cart?.items.length || !Number.isFinite(total) || total <= 0 || submitting}
             className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#0b1b46] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <StoreIcon name="shield" className="h-4 w-4" />

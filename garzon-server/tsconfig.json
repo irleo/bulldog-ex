@@ -13,6 +13,9 @@
     ]
   },
   "include": [
+    "config/db.js",
+    "config/config.js",
+    "middleware/deploymentMiddleware.js",
     "utils/numbers.js",
     "utils/validation.js",
     "middleware/auditLoggerMiddleware.js",
@@ -22,7 +25,6 @@
     "controllers/cartController.js",
     "controllers/orderController.js",
     "controllers/productController.js",
-    "controllers/dashboardController.js",
     "utils/transaction.js",
     "utils/mediaCleanup.js",
     "utils/requestQuotaStore.js",

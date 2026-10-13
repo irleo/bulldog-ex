@@ -1,6 +1,19 @@
 # CTWEBPGL Web Programming - Long Exam 1
 
+For production hosting, follow the [Vercel deployment guide](DEPLOYMENT.md).
+
 This repository contains **BulldogEx Shop**, a full-stack campus e-commerce application. The React client presents the public catalog, customer ordering flow, authentication pages, and administrator console. The Express server exposes a REST API backed by MongoDB and enforces validation, authentication, authorization, and data ownership.
+
+## Deployment and Demo Accounts
+
+Deployment branch: `deployment`.
+
+Use these accounts to review the application's admin and customer workflows:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Admin | `garzonlm@admin.com` | `@Password1` |
+| Customer | `garzonlm@customer.com` | `@Password1` |
 
 ## Main Features
 

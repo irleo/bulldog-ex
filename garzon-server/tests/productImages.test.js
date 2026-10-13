@@ -189,7 +189,7 @@ test('multipart middleware validates image-only requests and rejects excess file
   oversized.append('image', new Blob([Buffer.alloc(MAX_IMAGE_BYTES + 1)], { type: 'image/png' }), 'large.png');
   const response = await fetch(url, { method: 'POST', body: oversized });
   assert.equal(response.status, 400);
-  assert.match((await response.json()).message, /5 MB/);
+  assert.match((await response.json()).message, /4 MB/);
 });
 
 test('existing RBAC rejects a customer for admin media operations', () => {

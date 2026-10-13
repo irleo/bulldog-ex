@@ -1,9 +1,12 @@
 // @ts-check
 import { randomUUID } from "node:crypto";
 import cloudinary, { requireCloudinary } from "../config/cloudinary.js";
-import { scheduleCleanup, processCleanup } from "../utils/mediaCleanup.js";
+import {
+  scheduleCleanup,
+  processCleanup,
+  retryCleanupBatch,
+} from "../utils/mediaCleanup.js";
 import Review from "../models/reviewModel.js";
-import { isPrice, isStock } from "../utils/numbers.js";
 import mongoose from "mongoose";
 import { HttpStatus, UserRole } from "../config/constants.js";
 import Category from "../models/categoryModel.js";
@@ -120,9 +123,6 @@ export const listProducts = asyncHandler(async (request, response) => {
   /** @type {import('mongoose').QueryFilter<import('mongoose').InferSchemaType<typeof Product.schema>>} */
   const filter = { isActive: true };
 
-  // Keep sold-out inventory in the Admin list, but omit it from the storefront.
-  if (request.user?.role !== UserRole.ADMIN) filter.stock = { $gt: 0 };
-
   if (categoryId !== undefined) filter.categoryId = categoryId;
   if (request.user?.role === UserRole.ADMIN) {
     if (isActive === undefined) delete filter.isActive;
@@ -157,13 +157,6 @@ export const listProducts = asyncHandler(async (request, response) => {
       "minPrice cannot be greater than maxPrice.",
     );
   }
-  if (request.user?.role !== UserRole.ADMIN) {
-    filter.price = {
-      $gte: Math.max(0.01, minPrice ?? 0.01),
-      $lte: Math.min(1000000, maxPrice ?? 1000000),
-    };
-    filter.stock = { $gte: 1, $lte: 1000000, $mod: [1, 0] };
-  }
   const requestedSort = parseProductSort(request.query.sort);
   /** @type {Record<string, import('mongoose').SortOrder>} */
   const productSort =
@@ -196,7 +189,7 @@ export const getProduct = asyncHandler(async (request, response) => {
     isActive: true,
   }).populate(categoryPopulation);
 
-  if (!product || !isPrice(product.price) || !isStock(product.stock)) {
+  if (!product) {
     throw new ApiError(HttpStatus.NOT_FOUND, "Product was not found.");
   }
   const [rating] = await Review.aggregate([
@@ -469,3 +462,9 @@ export async function updateProductWithImage(id, fields, buffer) {
   const warning = asset ? await cleanupProductAsset(oldPublicId) : undefined;
   return { product, warning };
 }
+
+export const retryProductImageCleanup = asyncHandler(
+  async (_request, response) => {
+    response.json({ success: true, data: await retryCleanupBatch() });
+  },
+);

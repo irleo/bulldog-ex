@@ -1,9 +1,9 @@
 import { Button, StoreCard, StoreIcon } from "../../components/StoreUI.jsx";
-import logo from "../../assets/img/nubdexchange_logo.png";
-import category1 from "../../assets/img/category1.jpg";
-import category2 from "../../assets/img/category2.jpg";
-import category3 from "../../assets/img/category3.jpg";
-import category4 from "../../assets/img/category4.jpg";
+import logo from "../../assets/img/nubdexchange_logo.webp";
+import category1 from "../../assets/img/category1.webp";
+import category2 from "../../assets/img/category2.webp";
+import category3 from "../../assets/img/category3.webp";
+import category4 from "../../assets/img/category4.webp";
 
 const stats = [
   ["08", "Items"],

@@ -13,6 +13,8 @@
     ]
   },
   "include": [
+    "src/vite-env.d.ts",
+    "src/api/config.js",
     "src/utils/numbers.js",
     "src/utils/validation.js"
   ]

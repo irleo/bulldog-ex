@@ -69,7 +69,6 @@ const productSchema = new mongoose.Schema(
         message: "A product can contain at most 8 images.",
       },
     },
-    // Absent for legacy/local images. Only the upload service assigns this field.
     imagePublicId: {
       type: String,
       match: /^bulldogs-exchange\/products\/[a-f0-9-]{36}$/,

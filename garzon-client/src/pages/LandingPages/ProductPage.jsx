@@ -104,7 +104,7 @@ const ProductPage = () => {
           <p
             className={`mt-1 text-sm ${product.stock > 10 ? "text-green-700" : "text-amber-700"}`}
           >
-            {!isStock(product.stock) || product.stock === 0 ? "Sold out" : product.stock > 10
+            {!isStock(product.stock) ? "Stock unavailable" : product.stock === 0 ? "Out of Stock" : product.stock > 10
               ? `In stock — ${product.stock} available`
               : `Low stock — only ${product.stock} left`}
           </p>

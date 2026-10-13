@@ -4,21 +4,22 @@ import sharp from "sharp";
 import { ApiError } from "./errorHandlers.js";
 import { validateBody } from "../utils/validation.js";
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+// Leave room for multipart fields below Vercel's 4.5 MB request limit.
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const formats = new Map([
   ["image/jpeg", { format: "jpeg", extensions: [".jpg", ".jpeg"] }],
   ["image/png", { format: "png", extensions: [".png"] }],
   ["image/webp", { format: "webp", extensions: [".webp"] }],
 ]);
 
-/** Decode all pixels, reject animation, and strip metadata/trailing payloads by re-encoding.
+/**
  * @param {Buffer} buffer
  * @param {string} mimetype
  * @returns {Promise<Buffer>}
  */
 export async function sanitizeImage(buffer, mimetype) {
   if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) {
-    throw new ApiError(400, "Choose a non-empty image up to 5 MB.");
+    throw new ApiError(400, "Choose a non-empty image up to 4 MB.");
   }
   const detected = buffer
     .subarray(0, 8)
@@ -59,7 +60,7 @@ export async function sanitizeImage(buffer, mimetype) {
     if (sanitized.length > MAX_IMAGE_BYTES)
       throw new ApiError(
         400,
-        "The processed image exceeds 5 MB. Choose a smaller image.",
+        "The processed image exceeds 4 MB. Choose a smaller image.",
       );
     return sanitized;
   } catch (error) {
@@ -101,7 +102,7 @@ export const uploadImageMiddleware = (request, response, next) => {
         new ApiError(
           400,
           error.code === "LIMIT_FILE_SIZE"
-            ? "Image cannot exceed 5 MB."
+            ? "Image cannot exceed 4 MB."
             : "Upload one supported image in the image field and product fields only.",
         ),
       );

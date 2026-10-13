@@ -74,11 +74,12 @@ export const listOrders = asyncHandler(async (request, response) => {
     request.query.limit,
   );
   const filter = {};
-  if (String(request.query.status)) {
-    if (!orderStatuses.includes(String(request.query.status))) {
+  const status = request.query.status;
+  if (status !== undefined && status !== "") {
+    if (typeof status !== "string" || !orderStatuses.includes(status)) {
       throw new ApiError(HttpStatus.BAD_REQUEST, "status is invalid.");
     }
-    filter.status = request.query.status;
+    filter.status = status;
   }
   if (request.query.q) {
     filter.orderNumber = {

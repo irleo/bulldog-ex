@@ -550,7 +550,10 @@ const AdminConsolePage = ({ section }) => {
                 </h3>
                 <p className="mt-0.5 text-xs text-[#64748b]">
                   {product.sku} · {product.categoryId?.name} ·{" "}
-                  {peso.format(product.price)} · {product.stock} in stock
+                  {peso.format(product.price)} ·{" "}
+                  <span className={product.stock === 0 ? "font-semibold text-red-700" : undefined}>
+                    {product.stock === 0 ? "Out of Stock" : `${product.stock} in stock`}
+                  </span>
                 </p>
               </div>
               <StatusPill status={product.isActive ? "active" : "inactive"} />

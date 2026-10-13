@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useBlocker } from "react-router-dom";
+import { API_BASE_URL } from "../api/config.js";
 
 /** @typedef {{title: string, message: string, confirmLabel: string, cancelLabel?: string, destructive?: boolean, onConfirm: () => unknown | Promise<unknown>, onCancel?: () => void}} ConfirmationOptions */
 
@@ -110,12 +111,17 @@ export const useConfirmation = () => {
     /** @type {ConfirmationOptions|null} */ (null),
   );
   const opened = useRef(false);
-  const resolve = useRef(/** @type {((confirmed: boolean) => void)|null} */ (null));
+  const resolve = useRef(
+    /** @type {((confirmed: boolean) => void)|null} */ (null),
+  );
   const confirm = useCallback(
     /** @param {ConfirmationOptions} next */ (next) => {
       if (opened.current) return Promise.resolve(false);
       opened.current = true;
-      return new Promise((done) => { resolve.current = done; setOptions(next); });
+      return new Promise((done) => {
+        resolve.current = done;
+        setOptions(next);
+      });
     },
     [],
   );
@@ -125,7 +131,12 @@ export const useConfirmation = () => {
     resolve.current?.(confirmed);
     resolve.current = null;
   }, []);
-  useEffect(() => () => { resolve.current?.(false); }, []);
+  useEffect(
+    () => () => {
+      resolve.current?.(false);
+    },
+    [],
+  );
   return {
     confirm,
     confirmation: options && (
@@ -140,7 +151,9 @@ const formSnapshot = (form) =>
     Array.from(new FormData(form), ([key, value]) => [
       key,
       value instanceof File
-        ? (value.name ? [value.name, value.size, value.lastModified] : null)
+        ? value.name
+          ? [value.name, value.size, value.lastModified]
+          : null
         : value,
     ]),
   );
@@ -219,9 +232,7 @@ export const useUnsavedForm = (confirm) => {
   return { formRef, onFormChange, markSaved, guardDiscard };
 };
 
-const apiBaseUrl =
-  import.meta.env.VITE_API_URL ?? "http://localhost:5000/api/v1";
-const serverOrigin = new URL(apiBaseUrl, window.location.origin).origin;
+const serverOrigin = new URL(API_BASE_URL, window.location.origin).origin;
 
 const resolveImageSource = (source) =>
   source?.startsWith("/uploads/") ? `${serverOrigin}${source}` : source;
@@ -236,9 +247,24 @@ export const ProductImage = ({
   );
   const [failedSource, setFailedSource] = useState(null);
   if (!savedSource || failedSource === savedSource) {
-    return <span role="img" aria-label={`${alt}: image unavailable`} className={`flex items-center justify-center bg-slate-100 p-3 text-center text-xs text-slate-500 ${className}`}>Image unavailable</span>;
+    return (
+      <span
+        role="img"
+        aria-label={`${alt}: image unavailable`}
+        className={`flex items-center justify-center bg-slate-100 p-3 text-center text-xs text-slate-500 ${className}`}
+      >
+        Image unavailable
+      </span>
+    );
   }
-  return <img src={savedSource} alt={alt} className={className} onError={() => setFailedSource(savedSource)} />;
+  return (
+    <img
+      src={savedSource}
+      alt={alt}
+      className={className}
+      onError={() => setFailedSource(savedSource)}
+    />
+  );
 };
 
 const buttonVariants = {

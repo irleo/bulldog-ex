@@ -19,7 +19,7 @@ not created by public registration or by the catalog seed.
 
 | Resource | Public | Customer | Admin |
 | --- | --- | --- | --- |
-| Products | List active, in-stock products | List active, in-stock products | View all stock levels; create, edit, activate/deactivate |
+| Products | List active products, including out-of-stock items | List active products, including out-of-stock items | View all stock levels; create, edit, activate/deactivate |
 | Reviews | View visible reviews | Create reviews after claiming an order | View, edit content/rating, flag, and hide reviews |
 | Cart | - | Manage own cart | - |
 | Orders | - | Create and view own orders | View all and update status |
@@ -30,10 +30,10 @@ Every protected request sends `Authorization: Bearer <token>`. Authentication
 also checks the database on every request, so deactivated accounts immediately
 lose access even when they still hold an unexpired token.
 
-The customer product list excludes products with zero stock. Search results and
-pagination totals use the same in-stock filter. Admin inventory continues to
-include sold-out products for restocking. Active products return to the customer
-list on its next refresh once their stock is greater than zero.
+Customer catalog visibility depends on active status. Active products with zero
+stock remain visible as "Out of Stock"; inactive products are hidden. Stock and
+price validation block add-to-cart and checkout, including carts whose products
+sell out after being added. Customers can remove sold-out items from their cart.
 
 ## Primary endpoints
 
@@ -95,7 +95,7 @@ control characters, and invalid values return safe field-level errors.
   page is 1–100,000. Fractional or partially numeric pagination is rejected.
 - Product creation and category changes require an existing active category.
 - Review ratings are integers from 1–5 and review text is 10–1000 characters.
-- An upload accepts one static JPG/PNG/WebP up to 5 MB and 20 megapixels. The
+- An upload accepts one static JPG/PNG/WebP up to 4 MB and 20 megapixels. The
   middleware checks extension, MIME and signature, fully decodes the pixels,
   and re-encodes to WebP without source metadata before uploading to Cloudinary.
   Replaced Cloudinary assets are deleted after the database update succeeds.
@@ -118,7 +118,8 @@ legacy records are not rewritten automatically.
 listening. `app.js` composes the Express application without starting a server,
 so tests can exercise real HTTP middleware independently.
 
-Middleware order is audit logger → Helmet → CORS → API/write limiters → body
+Middleware order is Vercel client IP → Helmet → CORS → database readiness → audit
+logger → API/write limiters → body
 parsers → resource routers and validation/authentication → centralized errors.
 Audit logging observes completed responses, including parser failures, 404s,
 authorization denials, and throttled requests. `auditLoggerMiddleware.js` writes
@@ -219,10 +220,10 @@ logs its public ID for reconciliation; deleting it could break a committed write
 Cleanup intent is stored in `mediaCleanupJobs` before uploads and before replacing
 or removing an image reference. Failed or ambiguous operations therefore remain
 recoverable after restart. Successful immediate cleanup removes its job. The
-admin dashboard shows due checks and offers a bounded retry (five candidates).
+admin-only `POST /api/v1/products/media-cleanup/retry` endpoint processes up to
+five due candidates per request.
 Checks start after a 24-hour grace period, retain referenced images, and defer
-failed retries for an hour. No background worker runs. Keep the dashboard checks
-in the store's operating routine; the application never deletes local legacy files.
+failed retries for an hour. No background worker runs. Use that endpoint for manual checks; the application never deletes local legacy files.
 Deactivating a product keeps its image for later reactivation.
 
 ### Verification and submission
@@ -262,9 +263,8 @@ export `Garzon_Activity6_CTADWEBL.pdf`.
   User deletion archives the account and revokes access. Profile data, cart,
   review attribution, and order history are retained; the email remains reserved.
   This is archival, not a personal-data erasure workflow.
-- Dashboard totals cover the full collections. Paid order metrics cover orders
-  created in the previous seven days, exclude cancelled/unpaid records, and show
-  real zeros. No payment-recording or payment-gateway feature was introduced.
+- The dashboard is a visual-only sample with fixed metrics and charts. It makes
+  no API requests and has no backend controller, route, or model.
 - New indexes: sessions token hash/expiry, login attempt hash/expiry, request quota
   expiry, media cleanup ID/due date, audit expiry, and order user/checkout key.
   Deploy with these indexes initialized before accepting traffic. Existing carts
@@ -288,8 +288,8 @@ conversion. Frontend `npm run lint` and `npm run build` remain required checks.
 ## Activity-aligned code structure
 
 Routes call controllers directly. Cart operations live in `controllers/cartController.js`,
-checkout and inventory transactions in `controllers/orderController.js`, and dashboard
-queries in `controllers/dashboardController.js`. There is no repository layer.
+checkout and inventory transactions in `controllers/orderController.js`. The
+dashboard is a static frontend page. There is no repository layer.
 
 For Part 5, `controllers/productController.js` imports the configured Cloudinary
 client from `config/cloudinary.js` and performs `cloudinary.uploader.upload_stream`

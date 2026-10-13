@@ -1,3 +1,4 @@
+import { isPrice, isStock } from "../../utils/numbers.js";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "../../api/apiClient.js";
@@ -20,8 +21,8 @@ const ProductCard = ({ product }) => (
       </div>
       <p className="mt-3 text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">{product.categoryId?.name ?? "Campus merchandise"}</p>
       <h2 className="font-display mt-0.5 text-sm font-bold leading-snug text-[#101828]">{product.name}</h2>
-      <p className="mt-1 text-[11px] text-[#64748b]">{product.stock} in stock</p>
-      <div className="mt-auto flex items-center justify-between pt-3"><strong className="font-display text-sm font-extrabold text-[#0b1b46]">{peso.format(product.price)}</strong><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#f6ecc9] text-[#a9841f]"><StoreIcon name="plus" className="h-4 w-4" /></span></div>
+      <p className={`mt-1 text-[11px] ${product.stock === 0 ? "font-semibold text-red-700" : "text-[#64748b]"}`}>{!isStock(product.stock) ? "Stock unavailable" : product.stock === 0 ? "Out of Stock" : `${product.stock} in stock`}</p>
+      <div className="mt-auto flex items-center justify-between pt-3"><strong className="font-display text-sm font-extrabold text-[#0b1b46]">{isPrice(product.price) ? peso.format(product.price) : "Price unavailable"}</strong><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#f6ecc9] text-[#a9841f]"><StoreIcon name={product.stock === 0 ? "arrow-right" : "plus"} className="h-4 w-4" /></span></div>
     </Link>
   </StoreCard>
 );

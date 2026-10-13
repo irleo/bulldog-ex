@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import background from "../assets/img/notfound-bg.jpg";
+import background from "../assets/img/notfound-bg.webp";
 
 const NotFoundPage = () => {
   return (

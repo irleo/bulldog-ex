@@ -1,8 +1,8 @@
 import { Button, StoreCard, StoreIcon } from "../../components/StoreUI.jsx";
-import logo from "../../assets/img/NU-Bulldogs-Logo.png";
-import dailyEssentials from "../../assets/img/daily_essentials.png";
-import studySupplies from "../../assets/img/study_supplies.jpg";
-import campusApparel from "../../assets/img/campus_apparel.jpg";
+import logo from "../../assets/img/NU-Bulldogs-Logo.webp";
+import dailyEssentials from "../../assets/img/daily_essentials.webp";
+import studySupplies from "../../assets/img/study_supplies.webp";
+import campusApparel from "../../assets/img/campus_apparel.webp";
 
 const stats = [
   ["08", "Products"],

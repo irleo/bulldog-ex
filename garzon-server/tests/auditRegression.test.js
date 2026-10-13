@@ -19,7 +19,6 @@ const { getCart, mutateCart } = await import('../controllers/cartController.js')
 const { issueAccessToken, hashToken } = await import('../utils/token.js');
 const { authenticate } = await import('../middleware/authentication.js');
 const { validateBody } = await import('../utils/validation.js');
-const { getDashboard } = await import('../controllers/dashboardController.js');
 const { recordFailure, findAttempt } = await import('../models/loginAttemptModel.js');
 const { default: app } = await import('../app.js');
 const { default: Category } = await import('../models/categoryModel.js');
@@ -113,15 +112,6 @@ test('unknown emails receive the same persisted failure cooldown', async () => {
   assert.equal((await findAttempt(email)).failedLoginAttempts, 5);
   assert.ok((await findAttempt(email)).loginLockedUntil > new Date());
 });
-test('dashboard counts beyond the first page and excludes unpaid orders', async () => {
-  const productsBefore = await Product.countDocuments({ isActive: true });
-  await Product.insertMany(Array.from({ length: 101 }, () => ({ name: randomUUID(), sku: randomUUID(), price: 1, stock: 1, categoryId: new mongoose.Types.ObjectId() })));
-  const data = await getDashboard();
-  assert.equal(data.products, productsBefore + 101);
-  assert.equal(data.paidAmount, 0);
-  assert.deepEqual(data.daily, []);
-});
-
 async function request(path, token, method = 'GET', body, headers = {}) {
   const response = await fetch(`${baseUrl}${path}`, { method, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) });
   return { status: response.status, payload: await response.json() };
@@ -130,7 +120,7 @@ test('HTTP workflow validates checkout, ratings, account lifecycle and password 
   const admin = await User.create({ firstName: 'Audit', lastName: 'Admin', email: `${randomUUID()}@example.com`, role: 'admin', passwordHash: 'test-password' });
   const customer = await User.create({ firstName: 'Audit', lastName: 'Buyer', email: `${randomUUID()}@example.com`, studentNumber: '2023-123456', course: 'Computer Science', yearLevel: '4', passwordHash: 'test-password', phone: contact.phone, address: { street: 'Main St', city: 'Manila', province: 'Metro Manila', postalCode: '1000' } });
   const adminToken = await issueAccessToken(admin), customerToken = await issueAccessToken(customer);
-  assert.equal((await request('/dashboard', customerToken)).status, 403);
+  assert.equal((await request('/products/media-cleanup/retry', customerToken, 'POST')).status, 403);
   assert.equal((await request('/users/me/password', customerToken, 'PATCH', { currentPassword: 'wrong-password', newPassword: 'new-password' })).status, 400);
   assert.equal((await request('/users/me/session', customerToken)).status, 200);
   const category = await Category.create({ name: `Test ${randomUUID()}` });
@@ -146,6 +136,17 @@ test('HTTP workflow validates checkout, ratings, account lifecycle and password 
   const key = randomUUID();
   const first = await request('/orders', customerToken, 'POST', body, { 'Idempotency-Key': key });
   assert.equal(first.status, 201);
+  const allOrders = await request('/orders?page=1&limit=20', adminToken);
+  assert.equal(allOrders.status, 200);
+  assert.ok(allOrders.payload.data.some(order => order._id === first.payload.data._id));
+  const emptyStatus = await request('/orders?status=', adminToken);
+  assert.equal(emptyStatus.status, 200);
+  for (const status of ['pending', 'confirmed', 'ready_for_claiming', 'claimed', 'cancelled']) {
+    const filtered = await request(`/orders?status=${status}`, adminToken);
+    assert.equal(filtered.status, 200);
+    assert.ok(filtered.payload.data.every(order => order.status === status));
+  }
+  assert.equal((await request('/orders?status=invalid', adminToken)).status, 400);
   const replay = await request('/orders', customerToken, 'POST', body, { 'Idempotency-Key': key });
   assert.equal(replay.payload.data._id, first.payload.data._id);
   assert.equal((await request(`/categories/${category._id}`, adminToken, 'DELETE')).status, 200);
@@ -214,4 +215,19 @@ test('audit writes are bounded and repetitive throttled traffic is sampled', asy
   assert.equal(writes, 32);
   pending.forEach(resolve => resolve());
   await Promise.resolve();
+});
+
+test('active sold-out products stay visible but cannot be added or checked out', async () => {
+  const { userId, cart, product } = await fixture();
+  await Product.updateOne({ _id: product._id }, { $set: { stock: 0 } });
+  const listing = await request(`/products?search=${product.sku}`);
+  assert.equal(listing.status, 200);
+  assert.equal(listing.payload.pagination.total, 1);
+  assert.equal(listing.payload.data[0].stock, 0);
+  assert.equal((await request(`/products/${product._id}`)).status, 200);
+  await assert.rejects(mutateCart(userId, 'add', String(product._id), 1), { statusCode: 409 });
+  await assert.rejects(checkoutCart(userId, randomUUID(), String(cart._id), cart.revision, contact), { statusCode: 409 });
+  await Product.updateOne({ _id: product._id }, { $set: { isActive: false } });
+  assert.equal((await request(`/products?search=${product.sku}`)).payload.pagination.total, 0);
+  assert.equal((await request(`/products/${product._id}`)).status, 404);
 });

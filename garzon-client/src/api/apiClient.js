@@ -1,7 +1,6 @@
 import { validateBody, validateQuery, InputError } from '../utils/validation.js';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api/v1';
+import { API_BASE_URL, MAX_IMAGE_BYTES } from './config.js';
 
 const tokenKey = 'bulldogsExchangeToken';
 
@@ -30,7 +29,7 @@ export const apiRequest = async (path, options = {}) => {
       const fields = {};
       for (const [key, value] of options.body) {
         if (value instanceof File) {
-          if (value.size && (!['image/jpeg', 'image/png', 'image/webp'].includes(value.type) || value.size > 5 * 1024 * 1024)) throw new InputError('image', 'Choose a JPG, PNG, or WebP image up to 5 MB.');
+          if (!value.size || !['image/jpeg', 'image/png', 'image/webp'].includes(value.type) || value.size > MAX_IMAGE_BYTES) throw new InputError('image', 'Choose a non-empty JPG, PNG, or WebP image up to 4 MB.');
         } else fields[key] = value;
       }
       const validated = validateBody(path, options.method ?? 'GET', fields, true);

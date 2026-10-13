@@ -1,6 +1,6 @@
 import { Link, Outlet } from "react-router-dom";
-import nubg from "../assets/img/nu-building.png";
-import logo from "../assets/img/nubdexchange_logo.png";
+import nubg from "../assets/img/nu-building.webp";
+import logo from "../assets/img/nubdexchange_logo.webp";
 
 const AuthLayout = () => (
   <section className="min-h-screen overflow-hidden bg-[#eef2fb] text-default lg:h-screen">

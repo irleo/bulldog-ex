@@ -1,10 +1,10 @@
-import dashboardRoutes from "./routes/dashboardRoutes.js";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { fileURLToPath } from "node:url";
-import { CLIENT_ORIGIN, NODE_ENV, TRUST_PROXY } from "./config/config.js";
+import { databaseReady, vercelClientIp } from "./middleware/deploymentMiddleware.js";
+import { CLIENT_ORIGINS, NODE_ENV, TRUST_PROXY } from "./config/config.js";
 import { HttpStatus } from "./config/constants.js";
 import {
   notFoundHandler,
@@ -26,7 +26,7 @@ const app = express();
 app.set("trust proxy", TRUST_PROXY.length ? TRUST_PROXY : false);
 
 const corsOptions = {
-  origin: CLIENT_ORIGIN,
+  origin: CLIENT_ORIGINS,
   credentials: true,
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Idempotency-Key"],
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
@@ -36,7 +36,7 @@ const corsOptions = {
 
 // Middleware
 app.disable("x-powered-by");
-app.use(auditLoggerMiddleware);
+app.use(vercelClientIp);
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -58,7 +58,12 @@ app.use(
     strictTransportSecurity: NODE_ENV === "production",
   }),
 );
+
 app.use(cors(corsOptions));
+// Vercel detects app.js directly; initialize before database-backed middleware.
+// Handle preflight and set response headers even when the database is unavailable.
+app.use(databaseReady);
+app.use(auditLoggerMiddleware);
 app.use("/api/v1", apiLimiter, mutationLimiter);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
@@ -90,7 +95,6 @@ app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/reviews", reviewRoutes);
 app.use("/api/v1/users", userRoutes);
 
-app.use("/api/v1/dashboard", dashboardRoutes);
 
 // Error Handling
 app.use(notFoundHandler);

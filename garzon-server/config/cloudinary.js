@@ -13,7 +13,6 @@ cloudinary.config({
   secure: true,
 });
 
-// Allow catalog reads without credentials; fail explicitly when media is changed.
 export function requireCloudinary() {
   if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
     throw new ApiError(
