@@ -16,6 +16,7 @@
     "src/vite-env.d.ts",
     "src/api/config.js",
     "src/utils/numbers.js",
+    "src/utils/cartSelection.js",
     "src/utils/validation.js"
   ]
 }

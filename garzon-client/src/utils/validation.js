@@ -147,6 +147,13 @@ function fieldValue(field, value, resource, strings) {
   if (field === "price")
     return numeric(value, field, 0.01, 1000000, false, strings);
   if (field === "revision") return numeric(value, field, 0, Number.MAX_SAFE_INTEGER, true, strings);
+  if (field === "productIds") {
+    if (!Array.isArray(value) || value.length < 1 || value.length > 100)
+      fail(field, "Select between 1 and 100 products.");
+    const ids = /** @type {unknown[]} */ (value).map(id => objectId(id, field).toLowerCase());
+    if (new Set(ids).size !== ids.length) fail(field, "Each selected product must appear only once.");
+    return ids;
+  }
   if (field === "stock")
     return numeric(value, field, 0, 1000000, true, strings);
   if (field === "quantity") return numeric(value, field, 1, 100, true, strings);
@@ -231,7 +238,8 @@ export function validateBody(path, method, body, multipart = false) {
         : ["rating", "content", "isHidden", "isFlagged"];
     if (method === "POST") required = allowed;
   } else if (resource === "orders" && method === "POST" && !action) {
-    allowed = required = ["cartId", "revision"];
+    allowed = ["cartId", "revision", "productIds"];
+    required = ["cartId", "revision"];
   } else if (resource === "orders" && detail === "status")
     allowed = required = ["status"];
   for (const field of required)

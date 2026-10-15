@@ -21,6 +21,8 @@ Use these accounts to review the application's admin and customer workflows:
 
 - JWT registration, login, logout, protected routes, and active-session checks
 - Customer product search/category filtering, cart, pickup orders, reviews, and profile management
+- Select individual cart products for checkout while keeping unselected products in the cart
+- Admin order details include product names, SKUs, quantities, unit prices, totals, and saved customer contact information
 - Admin product, order, review, and user-management console
 - Backend-enforced role and ownership authorization
 - Pickup order progression from pending through ready for claiming

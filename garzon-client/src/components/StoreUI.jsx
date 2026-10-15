@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useBlocker } from "react-router-dom";
 import { API_BASE_URL } from "../api/config.js";
 
-/** @typedef {{title: string, message: string, confirmLabel: string, cancelLabel?: string, destructive?: boolean, onConfirm: () => unknown | Promise<unknown>, onCancel?: () => void}} ConfirmationOptions */
+/** @typedef {{title: string, message: string, content?: import('react').ReactNode, confirmLabel: string, cancelLabel?: string, destructive?: boolean, onConfirm: () => unknown | Promise<unknown>, onCancel?: () => void}} ConfirmationOptions */
 
 /** @param {{options: ConfirmationOptions, onClose: (confirmed: boolean) => void}} props */
 const ConfirmationDialog = ({ options, onClose }) => {
@@ -73,6 +73,7 @@ const ConfirmationDialog = ({ options, onClose }) => {
         >
           {options.message}
         </p>
+        {options.content && <div className="mt-5">{options.content}</div>}
         {error && (
           <p
             role="alert"
@@ -82,7 +83,7 @@ const ConfirmationDialog = ({ options, onClose }) => {
           </p>
         )}
       </div>
-      <div className="flex justify-end gap-2 border-t border-[#e3e7f0] bg-[#f8f9fc] px-6 py-4">
+      <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t border-[#e3e7f0] bg-[#f8f9fc] px-6 py-4">
         <button
           type="button"
           autoFocus

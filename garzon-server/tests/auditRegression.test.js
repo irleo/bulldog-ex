@@ -68,6 +68,76 @@ test('different keys cannot consume the same cart twice', async () => {
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(await Order.countDocuments({ userId }), 1);
 });
+
+test('selected checkout keeps unselected products and ignores their unavailable stock', async () => {
+  const { userId, product, cart } = await fixture();
+  const other = await Product.create({ name: randomUUID(), sku: randomUUID(), price: 9.99, stock: 2, categoryId: new mongoose.Types.ObjectId() });
+  const updated = await mutateCart(userId, 'add', String(other._id), 1);
+  await Product.updateOne({ _id: other._id }, { $set: { stock: 0 } });
+  const selection = [String(product._id)];
+  const key = randomUUID();
+  const order = await checkoutCart(userId, key, String(cart._id), updated.revision, contact, selection);
+  assert.equal(order.items.length, 1);
+  assert.equal(String(order.items[0].productId), String(product._id));
+  assert.equal(order.items[0].sku, product.sku);
+  assert.equal(order.totalAmount, 20.5);
+  const remaining = await getCart(userId);
+  assert.equal(remaining.items.length, 1);
+  assert.equal(String(remaining.items[0].productId), String(other._id));
+  assert.equal(remaining.revision, updated.revision + 1);
+  await transitionOrder(String(order._id), 'confirmed');
+  assert.equal((await Product.findById(product._id)).stock, 98);
+  assert.equal((await Product.findById(other._id)).stock, 0);
+  await transitionOrder(String(order._id), 'cancelled');
+  assert.equal((await Product.findById(product._id)).stock, 100);
+  const replay = await checkoutCart(userId, key, String(cart._id), updated.revision, contact, selection);
+  assert.equal(String(replay._id), String(order._id));
+  assert.equal((await getCart(userId)).items.length, 1);
+  await assert.rejects(checkoutCart(userId, key, String(cart._id), updated.revision, contact, [String(other._id)]), { statusCode: 409 });
+  await Product.updateOne({ _id: other._id }, { $set: { stock: 2 } });
+  const next = await checkoutCart(userId, randomUUID(), String(cart._id), remaining.revision, contact, [String(other._id)]);
+  assert.equal(next.totalAmount, 9.99);
+  assert.equal((await getCart(userId)).items.length, 0);
+});
+
+test('checkout rejects products outside the owned cart without changing it', async () => {
+  const { userId, cart } = await fixture();
+  const outsider = new mongoose.Types.ObjectId();
+  await assert.rejects(checkoutCart(userId, randomUUID(), String(cart._id), cart.revision, contact, [String(outsider)]), { statusCode: 409 });
+  assert.equal((await getCart(userId)).items.length, 1);
+  assert.equal(await Order.countDocuments({ userId }), 0);
+});
+
+test('concurrent selected checkout replays one order and retains the other cart line', async () => {
+  const { userId, cart, product } = await fixture();
+  const other = await Product.create({ name: randomUUID(), sku: randomUUID(), price: 4, stock: 10, categoryId: new mongoose.Types.ObjectId() });
+  const updated = await mutateCart(userId, 'add', String(other._id), 1);
+  const key = randomUUID();
+  const results = await Promise.all(Array.from({ length: 3 }, () => checkoutCart(userId, key, String(cart._id), updated.revision, contact, [String(product._id)])));
+  assert.equal(new Set(results.map(order => String(order._id))).size, 1);
+  assert.equal(await Order.countDocuments({ userId }), 1);
+  assert.equal((await getCart(userId)).items.length, 1);
+});
+
+test('a failed selected order restores all cart lines and its revision', async () => {
+  const { userId, cart, product } = await fixture();
+  const other = await Product.create({ name: randomUUID(), sku: randomUUID(), price: 4, stock: 10, categoryId: new mongoose.Types.ObjectId() });
+  const updated = await mutateCart(userId, 'add', String(other._id), 1);
+  await assert.rejects(checkoutCart(userId, randomUUID(), String(cart._id), updated.revision, { ...contact, phone: 'invalid' }, [String(product._id)]));
+  const remaining = await getCart(userId);
+  assert.equal(remaining.items.length, 2);
+  assert.equal(remaining.revision, updated.revision);
+  assert.equal(await Order.countDocuments({ userId }), 0);
+});
+
+test('selected checkout rejects an unavailable selected item and a stale revision', async () => {
+  const { userId, cart, product } = await fixture();
+  const updated = await mutateCart(userId, 'add', String(product._id), 1);
+  await assert.rejects(checkoutCart(userId, randomUUID(), String(cart._id), cart.revision, contact, [String(product._id)]), { statusCode: 409 });
+  await Product.updateOne({ _id: product._id }, { $set: { isActive: false } });
+  await assert.rejects(checkoutCart(userId, randomUUID(), String(cart._id), updated.revision, contact, [String(product._id)]), { statusCode: 409 });
+  assert.equal((await getCart(userId)).items[0].quantity, 3);
+});
 test('concurrent additions preserve all quantities and reject stale checkout', async () => {
   const { userId, cart, product } = await fixture();
   await Promise.all(Array.from({ length: 4 }, () => mutateCart(userId, 'add', String(product._id), 1)));
@@ -131,14 +201,25 @@ test('HTTP workflow validates checkout, ratings, account lifecycle and password 
   assert.equal(detail.payload.data.reviewCount, 1);
   const added = await request('/carts/items', customerToken, 'POST', { productId: String(product._id), quantity: 1 });
   assert.equal(added.status, 200);
-  const body = { cartId: added.payload.data._id, revision: added.payload.data.revision };
+  const other = await Product.create({ name: `Saved ${randomUUID()}`, sku: randomUUID(), price: 3.5, stock: 5, categoryId: category._id });
+  const secondAdded = await request('/carts/items', customerToken, 'POST', { productId: String(other._id), quantity: 2 });
+  const body = { cartId: secondAdded.payload.data._id, revision: secondAdded.payload.data.revision, productIds: [String(product._id)] };
   assert.equal((await request('/orders', customerToken, 'POST', body)).status, 400);
   const key = randomUUID();
   const first = await request('/orders', customerToken, 'POST', body, { 'Idempotency-Key': key });
   assert.equal(first.status, 201);
+  const remainingCart = await request('/carts', customerToken);
+  assert.equal(remainingCart.payload.data.items.length, 1);
+  assert.equal(remainingCart.payload.data.items[0].productId._id, String(other._id));
   const allOrders = await request('/orders?page=1&limit=20', adminToken);
   assert.equal(allOrders.status, 200);
   assert.ok(allOrders.payload.data.some(order => order._id === first.payload.data._id));
+  const preparedOrder = allOrders.payload.data.find(order => order._id === first.payload.data._id);
+  assert.equal(preparedOrder.items[0].productName, product.name);
+  assert.equal(preparedOrder.items[0].sku, product.sku);
+  assert.equal(preparedOrder.items[0].quantity, 1);
+  assert.equal(preparedOrder.phone, contact.phone);
+  assert.equal(preparedOrder.shippingAddress.recipientName, 'Audit Buyer');
   const emptyStatus = await request('/orders?status=', adminToken);
   assert.equal(emptyStatus.status, 200);
   for (const status of ['pending', 'confirmed', 'ready_for_claiming', 'claimed', 'cancelled']) {

@@ -41,7 +41,7 @@ export const createOrder = asyncHandler(async (request, response) => {
   const contact = requireCompletedPickupProfile(request.user);
   const key = request.get('Idempotency-Key');
   if (!key || !/^[a-f0-9-]{36}$/i.test(key)) throw new ApiError(400, 'A valid Idempotency-Key is required.');
-  const order = await checkoutCart(String(request.user._id), key, request.body.cartId, request.body.revision, contact);
+  const order = await checkoutCart(String(request.user._id), key, request.body.cartId, request.body.revision, contact, request.body.productIds);
   await order.populate(orderPopulation);
   response.status(HttpStatus.CREATED).json({ success: true, message: 'Order placed successfully.', data: order });
 });
@@ -240,21 +240,35 @@ export const updateOrderStatus = asyncHandler(async (request, response) => {
   response.status(HttpStatus.OK).json({ success: true, message: `Order marked as ${order.status.replaceAll('_', ' ')}.`, data: order });
 });
 /** @param {string} userId @param {string} key @param {string} cartId @param {number} revision
- * @param {{phone:string, shippingAddress:Record<string, unknown>}} contact */
-export async function checkoutCart(userId, key, cartId, revision, contact) {
+ * @param {{phone:string, shippingAddress:Record<string, unknown>}} contact
+ * @param {string[]} [productIds] Explicit selection; omission supports older clients. */
+export async function checkoutCart(userId, key, cartId, revision, contact, productIds) {
+  const selection = productIds === undefined ? undefined : (/** @type {{productIds: string[]}} */ (validateBody('/orders', 'POST', { cartId, revision, productIds }))).productIds;
+  /** Reject reuse of a successful key with a different product selection.
+   * @param {InstanceType<typeof Order>} order */
+  const replayOrder = (order) => {
+    if (selection && (order.items.length !== selection.length || order.items.some(item => !selection.includes(String(item.productId))))) {
+      throw new ApiError(409, 'This checkout key was already used for a different selection. Refresh your cart.');
+    }
+    return order;
+  };
   const existing = await Order.findOne({ userId, checkoutKey: key });
-  if (existing) return existing;
+  if (existing) return replayOrder(existing);
   try {
     return await inTransaction(async (session) => {
       const replay = await Order.findOne({ userId, checkoutKey: key }).session(session);
-      if (replay) return replay;
+      if (replay) return replayOrder(replay);
       const cart = await Cart.findOne({ _id: cartId, userId }).session(session).lean();
       if (!cart?.items.length || (cart.revision ?? 0) !== revision) {
         throw new ApiError(409, 'Your cart changed. Refresh it before placing an order.');
       }
-      const products = await Product.find({ _id: { $in: cart.items.map(item => item.productId) } })
+      const selectedItems = selection ? cart.items.filter(item => selection.includes(String(item.productId))) : cart.items;
+      if (!selectedItems.length || (selection && selectedItems.length !== selection.length)) {
+        throw new ApiError(409, 'A selected product is no longer in your cart. Refresh and try again.');
+      }
+      const products = await Product.find({ _id: { $in: selectedItems.map(item => item.productId) } })
         .select('name sku price stock isActive').limit(100).session(session).lean();
-      const items = cart.items.map(item => {
+      const items = selectedItems.map(item => {
         const product = products.find(product => String(product._id) === String(item.productId));
         if (!product?.isActive || !isPrice(product.price) || !isStock(product.stock)
           || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100 || product.stock < item.quantity) {
@@ -263,8 +277,9 @@ export async function checkoutCart(userId, key, cartId, revision, contact) {
         return { productId: product._id, productName: product.name, sku: product.sku,
           unitPrice: product.price, quantity: item.quantity, subtotal: Math.round(product.price * 100) * item.quantity / 100 };
       });
+      const selectedIds = new Set(selectedItems.map(item => String(item.productId)));
       const consumed = await Cart.updateOne({ _id: cart._id, items: cart.items },
-        { $set: { items: [] }, $inc: { revision: 1 } }, { session });
+        { $set: { items: cart.items.filter(item => !selectedIds.has(String(item.productId))) }, $inc: { revision: 1 } }, { session });
       if (consumed.modifiedCount !== 1) throw new ApiError(409, 'Your cart changed. Refresh and try again.');
       const [order] = await Order.create([{ userId, checkoutKey: key, items, ...contact,
         totalAmount: items.reduce((sum, item) => sum + Math.round(item.subtotal * 100), 0) / 100 }], { session });
@@ -273,7 +288,7 @@ export async function checkoutCart(userId, key, cartId, revision, contact) {
   } catch (error) {
     // A duplicate key or a lost commit response can be a successful earlier request.
     const replay = await Order.findOne({ userId, checkoutKey: key });
-    if (replay) return replay;
+    if (replay) return replayOrder(replay);
     throw error;
   }
 }

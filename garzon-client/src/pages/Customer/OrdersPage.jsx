@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../api/apiClient.js";
+import { useSearchParams } from "react-router-dom";
+import OrderLineItems from "../../components/OrderLineItems.jsx";
 import { notify } from "../../utils/toast.js";
 import {
   useConfirmation,
@@ -29,6 +31,8 @@ const ReviewStars = ({ rating }) => <span className="flex gap-0.5" aria-label={`
 const formatAmount = value => typeof value === 'number' && Number.isFinite(value) && value > 0 ? peso.format(value) : 'Unavailable';
 
 const OrdersPage = () => {
+  const [searchParams] = useSearchParams();
+  const requestedOrder = searchParams.get('order');
   const { confirm, confirmation } = useConfirmation();
   const { formRef, onFormChange, markSaved, guardDiscard } = useUnsavedForm(confirm);
   const [activeTab, setActiveTab] = useState("orders");
@@ -57,13 +61,13 @@ const OrdersPage = () => {
           ? ordersPayload.data
           : [];
         setOrders(records);
-        setSelectedId(records[0]?._id ?? "");
+        setSelectedId(current => records.some(order => order._id === requestedOrder) ? requestedOrder : records.some(order => order._id === current) ? current : records[0]?._id ?? "");
         setOrderPagination(ordersPayload.pagination ?? { total: 0 });
       })
       .catch((requestError) => { if (active) setOrdersError(requestError.message); })
       .finally(() => { if (active) setOrdersLoading(false); });
     return () => { active = false; };
-  }, [orderPage]);
+  }, [orderPage, requestedOrder]);
 
   useEffect(() => {
     let active = true;
@@ -264,21 +268,7 @@ const OrdersPage = () => {
               </div>
             )}
             <h3 className="font-display mb-3 text-sm font-bold">Items</h3>
-            <ul className="divide-y divide-[#e3e7f0] border-y border-[#e3e7f0]">
-              {selected.items?.map((item, index) => (
-                <li
-                  key={`${selected._id}-${item.productId?._id ?? index}`}
-                  className="flex justify-between gap-3 py-3 text-sm"
-                >
-                  <span>
-                    <strong>{Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 100 ? item.quantity : "Invalid quantity"}×</strong> {item.productName}
-                  </span>
-                  <span className="text-[#64748b]">
-                    {formatAmount(item.subtotal)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <OrderLineItems items={selected.items ?? []} />
             <div className="mt-4 flex justify-between text-sm">
               <span className="text-[#64748b]">Pickup location</span>
               <span>Main campus booth</span>

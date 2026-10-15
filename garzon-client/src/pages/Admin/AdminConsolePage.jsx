@@ -3,6 +3,7 @@ import { apiRequest } from "../../api/apiClient.js";
 import { useAuth } from "../../auth/authContext.js";
 import { notify } from "../../utils/toast.js";
 import ProductImageInput from '../../components/ProductImageInput.jsx';
+import AdminOrderDetailsModal from '../../components/AdminOrderDetailsModal.jsx';
 import {
   useConfirmation,
   LoadingState,
@@ -126,6 +127,7 @@ const AdminConsolePage = ({ section }) => {
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [orderDetailsId, setOrderDetailsId] = useState("");
   const [tableSort, setTableSort] = useState(null);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({
@@ -187,6 +189,7 @@ const AdminConsolePage = ({ section }) => {
   const endpoint = `${endpointBase}?${params.toString()}`;
   const pending = loading || loadedEndpoint !== endpoint;
   const visibleRecords = pending || error ? [] : records;
+  const detailsOrder = section === "orders" ? records.find(order => order._id === orderDetailsId) : null;
 
   const applyRecordsPayload = useCallback(
     (payload) => {
@@ -206,6 +209,7 @@ const AdminConsolePage = ({ section }) => {
         setPage(nextPagination.pages);
       }
       setSelected(null);
+      setOrderDetailsId("");
     },
     [page, section],
   );
@@ -279,7 +283,7 @@ const AdminConsolePage = ({ section }) => {
       question = {
         title: next === "cancelled" ? `Cancel order ${label}?` : next === "confirmed" ? `Confirm order ${label}?` : `Mark order ${label} as ready?`,
         message: next === "cancelled" ? "This permanently cancels the order and restores reserved inventory when applicable. The cancellation cannot be undone."
-          : next === "confirmed" ? "Confirm this order and reserve its inventory? It cannot return to pending; it may still be cancelled before it is ready for pickup."
+          : next === "confirmed" ? `Reserve inventory for ${record?.items?.map(item => `${item.quantity}× ${item.productName} (${item.sku})`).join(', ') || "this order"}? It cannot return to pending; it may still be cancelled before it is ready for pickup.`
           : "Confirm that this order is prepared for customer pickup. The customer will see it as ready, and it can no longer be cancelled or returned to preparing.",
         cancelLabel: next === "cancelled" ? "Keep order" : "Cancel",
         confirmLabel: next === "cancelled" ? "Cancel order" : next === "confirmed" ? "Confirm order" : "Mark as ready", destructive: next === "cancelled",
@@ -658,6 +662,9 @@ const AdminConsolePage = ({ section }) => {
         ) : (
           <StoreCard accent={false} className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
+              <caption className="caption-top px-4 py-3 text-left text-xs text-[#64748b]">
+                Select an order to view its details.
+              </caption>
               <thead className="bg-[#eef1f8] text-left text-[10px] uppercase tracking-wide text-[#64748b]">
                 <tr>
                   <th className="px-4 py-3">Order</th>
@@ -689,7 +696,7 @@ const AdminConsolePage = ({ section }) => {
                   const customerName =
                     [order?.userId?.firstName, order?.userId?.lastName]
                       .filter(Boolean)
-                      .join(" ") || "Unknown customer";
+                      .join(" ") || order.shippingAddress?.recipientName || "Unknown customer";
                   const total = Number.isFinite(Number(order?.totalAmount))
                     ? Number(order.totalAmount)
                     : 0;
@@ -701,9 +708,31 @@ const AdminConsolePage = ({ section }) => {
                     : 0;
 
                   return (
-                    <tr key={order?._id ?? `order-${index}`}>
+                    <tr
+                      key={order?._id ?? `order-${index}`}
+                      className="cursor-pointer transition-colors hover:bg-[#f6ecc9]/30 focus-within:bg-[#f6ecc9]/30"
+                      onClick={(event) => {
+                        if (saving || !order?._id) return;
+                        // Buttons retain their own actions; the row is a pointer shortcut.
+                        if (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, label, summary, [role="button"]')) return;
+                        if (window.getSelection()?.isCollapsed === false) return;
+                        const trigger = /** @type {HTMLButtonElement | null} */ (event.currentTarget.querySelector('[data-order-details]'));
+                        trigger?.focus();
+                        setOrderDetailsId(order._id);
+                      }}
+                    >
                       <td className="px-4 py-3 font-semibold">
-                        {order?.orderNumber || "Unavailable"}
+                        <button
+                          type="button"
+                          data-order-details=""
+                          disabled={saving || !order?._id}
+                          onClick={() => setOrderDetailsId(order._id)}
+                          aria-haspopup="dialog"
+                          aria-label={`View details for ${order.orderNumber}`}
+                          className="rounded text-left text-[#0b1b46] underline decoration-[#c7cede] underline-offset-4 hover:decoration-[#0b1b46] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2"
+                        >
+                          {order?.orderNumber || "Unavailable"}
+                        </button>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-[#64748b]">
                         {order?.createdAt
@@ -717,8 +746,12 @@ const AdminConsolePage = ({ section }) => {
                             )
                           : "Unavailable"}
                       </td>
-                      <td className="px-4 py-3">{customerName}</td>
-                      <td className="px-4 py-3 text-[#64748b]">{itemCount}</td>
+                      <td className="px-4 py-3">
+                        {order.shippingAddress?.recipientName || customerName}
+                      </td>
+                      <td className="px-4 py-3 text-[#64748b]">
+                        {itemCount} units
+                      </td>
                       <td className="px-4 py-3 font-semibold">
                         {peso.format(total)}
                       </td>
@@ -726,7 +759,7 @@ const AdminConsolePage = ({ section }) => {
                         <StatusPill status={status} />
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           {followingStatus && order?._id && (
                             <button
                               onClick={() =>
@@ -1096,6 +1129,7 @@ const AdminConsolePage = ({ section }) => {
   return (
     <div className="w-full">
       {confirmation}
+      {detailsOrder && <AdminOrderDetailsModal order={detailsOrder} onClose={() => setOrderDetailsId("")} />}
       <StorePageHeader
         eyebrow={details.eyebrow}
         title={details.title}
