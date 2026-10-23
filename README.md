@@ -1,309 +1,150 @@
-# CTWEBPGL Web Programming - Long Exam 1
+# BulldogEx Shop
 
-For production hosting, follow the [Vercel deployment guide](DEPLOYMENT.md).
+**A full-stack campus e-commerce application for browsing university merchandise, placing pickup orders, and managing store operations.**
 
-This repository contains **BulldogEx Shop**, a full-stack campus e-commerce application. The React client presents the public catalog, customer ordering flow, authentication pages, and administrator console. The Express server exposes a REST API backed by MongoDB and enforces validation, authentication, authorization, and data ownership.
+[**Live demo**](https://bulldogex-client.vercel.app) · [**Deployment guide**](DEPLOYMENT.md)
 
-## Deployment and Demo Accounts
+## Overview
 
-Deployment branch: `deployment`.
+BulldogEx Shop combines a customer-facing campus storefront with a role-restricted administration portal. Customers can browse merchandise, manage their carts, place pickup orders, track fulfillment, and manage accounts. Administrators manage inventory, orders, reviews, and users. A React frontend communicates with an Express REST API backed by MongoDB.
 
-Live site: [BulldogEx Shop](https://bulldogex-client.vercel.app).
+This began as an **Advanced Web Programming academic project** using an instructor-provided frontend starter template. I extended the frontend and implemented backend functionality, API integration, and deployment. Original commit authorship is preserved.
 
-Use these accounts to review the application's admin and customer workflows:
+## Features
 
-| Role | Email | Password |
-| --- | --- | --- |
-| Admin | `garzonlm@admin.com` | `@Password1` |
-| Customer | `garzonlm@customer.com` | `@Password1` |
+### Customer experience
 
-## Main Features
+- Browse and search products by name, SKU, or supplier; filter by category.
+- View prices, availability, and product details.
+- Manage cart quantities and select products for checkout.
+- Place campus pickup orders and track **Pending → Preparing → Ready for pickup → Claimed**.
+- Register, sign in, view order history, manage a profile, and submit reviews.
 
-- JWT registration, login, logout, protected routes, and active-session checks
-- Customer product search/category filtering, cart, pickup orders, reviews, and profile management
-- Select individual cart products for checkout while keeping unselected products in the cart
-- Admin order details include product names, SKUs, quantities, unit prices, totals, and saved customer contact information
-- Admin product, order, review, and user-management console
-- Backend-enforced role and ownership authorization
-- Pickup order progression from pending through ready for claiming
-- Consistent validation and API error responses
+### Administration
 
-## Client-Server Integration
+- View a dashboard with **sample** sales metrics and charts (not real revenue reporting).
+- Create, edit, activate/deactivate, and manage product inventory.
+- Review order details and update fulfillment status.
+- Moderate reviews and manage user accounts.
+- Enforce role-based permissions and resource ownership on the backend.
 
-The project is split into two independently installed and executed Node.js packages:
+## Screenshots
 
-- `garzon-client` runs the browser application with Vite, normally at `http://localhost:5173`.
-- `garzon-server` runs the REST API, normally at `http://localhost:5000/api/v1`.
-- MongoDB is accessed only by the server. The client never connects directly to the database.
+Screenshots of the storefront, catalog, cart, order tracking, dashboard, product management, and sign-in experience are prepared for this portfolio. They will appear here after the image assets are added to `assets/screenshots/`.
 
-The client reads `VITE_API_URL` from `garzon-client/.env`. Its centralized `apiRequest()` function in `src/api/apiClient.js` uses the browser Fetch API to send requests to the configured server URL. JSON request bodies automatically receive a `Content-Type: application/json` header, while `FormData` requests allow the browser to set the multipart boundary used for product image uploads.
+<!-- Uncomment after uploading the corresponding image files to assets/screenshots/.
+![BulldogEx Shop storefront](assets/screenshots/storefront.png)
 
-After a successful login, the client stores the returned JWT in `sessionStorage`, or in `localStorage` when the user selects the remember option. Future protected requests include the token as `Authorization: Bearer <token>`. `AuthProvider` restores the session through `GET /users/me/session`, and client route guards control the user experience for authenticated and role-specific pages. These route guards are not the security boundary: the server independently verifies the JWT, reloads the user, checks whether the account is active, and enforces customer/admin permissions.
+| Product catalog | Cart and order summary |
+| --- | --- |
+| ![Product catalog](assets/screenshots/catalog.png) | ![Cart](assets/screenshots/cart.png) |
 
-On the server, `CLIENT_ORIGIN` configures CORS so the browser may call the API. Requests pass through Express middleware and the matching `/api/v1` router before reaching a controller. Controllers validate and normalize input, execute Mongoose operations, and return a consistent JSON shape containing fields such as `success`, `message`, `count`, `data`, and, where applicable, `pagination` or `error`. Uploaded product images are served from `/uploads`, and the client can use those server-relative paths when displaying products.
+![Order tracking](assets/screenshots/order-tracking.png)
+
+| Dashboard (sample data) | Product management |
+| --- | --- |
+| ![Admin dashboard](assets/screenshots/admin-dashboard.png) | ![Admin products](assets/screenshots/admin-products.png) |
+
+![Sign-in page](assets/screenshots/login.png)
+-->
+
+## Technology stack
+
+| Layer | Technologies |
+| --- | --- |
+| Frontend | React, Vite, React Router, Tailwind CSS |
+| Backend | Node.js, Express |
+| Database | MongoDB, Mongoose |
+| Authentication | JWT, bcryptjs |
+| API integration | Browser Fetch API, centralized API client |
+| Security | Server-side validation, authorization, Helmet, CORS, rate limiting |
+| Images | Multer, Cloudinary (production) |
+| Deployment | Vercel, MongoDB Atlas |
+
+## Architecture
 
 ```text
-React page/component
-        |
-        | apiRequest() / Fetch + optional Bearer JWT
-        v
-Express /api/v1 route
-        |
-        | authentication, authorization, validation, upload middleware
-        v
-Controller -> Mongoose model -> MongoDB
-        |
-        v
-Structured JSON response -> React state -> rendered UI
+React client
+    │ Fetch API + optional Bearer JWT
+    ▼
+Express REST API (/api/v1)
+    │ Authentication · authorization · validation
+    ▼
+Controllers → Mongoose models → MongoDB
+    │
+    └── JSON response → React state → UI
 ```
 
-## Client Libraries and Packages
+The frontend uses an authentication provider, protected route guards, and a shared API client. **Client-side guards improve UX but are not the security boundary**: the server verifies JWTs and independently enforces roles and resource ownership.
 
-The following packages belong specifically to `garzon-client/package.json`:
+### API route groups
 
-| Package | Use in the client |
+| Route | Purpose |
 | --- | --- |
-| `react` | Builds pages and reusable UI components using state, effects, context, and composition. |
-| `react-dom` | Mounts the React component tree into the browser DOM. |
-| `react-router-dom` | Defines nested layouts, public routes, protected routes, URL parameters, redirects, and role-based navigation. |
-| `sonner` | Displays application toast notifications and API success/error feedback. |
-| `tailwindcss` | Provides utility-first styling used throughout the interface. |
-| `@tailwindcss/vite` | Integrates Tailwind CSS processing into Vite. |
-| `vite` | Supplies the development server, hot module replacement, and production bundling. |
-| `@vitejs/plugin-react` | Enables React JSX transformation and Fast Refresh in Vite. |
-| `eslint`, `@eslint/js` | Performs static analysis and enforces JavaScript code-quality rules. |
-| `eslint-plugin-react-hooks` | Checks correct React Hook usage and dependencies. |
-| `eslint-plugin-react-refresh` | Checks component exports for reliable Fast Refresh behavior. |
-| `globals` | Provides browser/global definitions to the ESLint configuration. |
-| `@types/react`, `@types/react-dom` | Supplies editor and tooling type information for the React APIs used by JSX. |
+| `/api/v1/users` | Registration, login, sessions, profiles, user management |
+| `/api/v1/categories` | Product categories |
+| `/api/v1/products` | Catalog and inventory management |
+| `/api/v1/carts` | Customer cart operations |
+| `/api/v1/orders` | Checkout, history, fulfillment |
+| `/api/v1/reviews` | Reviews and moderation |
+| `/api/v1/health` | Health check |
 
-The client uses the native browser Fetch API for HTTP communication, so a separate HTTP library such as Axios is not required.
+## Run locally
 
-## Server Libraries and Packages
+**Requirements:** Node.js 20+, npm, MongoDB. Client and server have separate dependencies.
 
-The following packages belong specifically to `garzon-server/package.json`:
+1. Clone:
 
-| Package | Use in the server |
-| --- | --- |
-| `express` | Creates the HTTP server, REST endpoints, middleware pipeline, and static upload route. |
-| `mongoose` | Connects to MongoDB and defines schemas, validation rules, indexes, references, and database queries. |
-| `jsonwebtoken` | Signs JWT access tokens and verifies bearer tokens for protected requests. |
-| `bcryptjs` | Hashes account passwords and compares login credentials securely. |
-| `cors` | Allows requests from the configured client origin and declares accepted headers/methods. |
-| `dotenv` | Loads server configuration such as the port, database URI, client origin, and JWT settings from `.env`. |
-| `morgan` | Logs incoming HTTP requests in development and production-appropriate formats. |
-| `multer` | Parses multipart form data and validates/stores uploaded product images. |
-| `helmet` | Adds HTTP security headers while allowing cross-origin product images. |
-| `express-rate-limit` | Applies API, mutation, login, registration, and password-change request limits. |
+   ```bash
+   git clone https://github.com/irleo/bulldog-ex.git
+   cd bulldog-ex
+   ```
 
-The server targets Node.js 20 or later and uses Node's built-in watch mode for development, so it does not require Nodemon.
+2. Create `garzon-server/.env`:
 
-## Design Patterns
+   ```dotenv
+   NODE_ENV=development
+   PORT=5000
+   MONGO_URI=mongodb://127.0.0.1:27017/bulldogs_exchange
+   CLIENT_ORIGIN=http://localhost:5173
+   JWT_SECRET=replace-with-a-long-random-secret
+   JWT_EXPIRES_IN=8h
+   ```
 
-### Client Design Pattern
+3. Start the backend:
 
-The client follows a **component-based, layered frontend architecture**:
+   ```bash
+   cd garzon-server
+   npm install
+   npm run dev
+   ```
 
-- **Pages** represent route-level screens and coordinate data fetching and user actions.
-- **Components** contain reusable presentation and interaction elements such as navigation, the footer, and shared store UI.
-- **Layouts** use React Router's nested outlet pattern to share shells across public, authentication, and admin pages.
-- **Context/Provider** centralizes global authentication state. `AuthProvider` supplies the current user and session actions without prop drilling.
-- **Route guards** wrap protected route branches and apply authentication or role requirements before rendering their child routes.
-- **API service layer** centralizes the base URL, token attachment, body headers, response parsing, and error normalization in `apiClient.js`.
-- **Utility modules** isolate cross-cutting UI behavior such as toast notifications.
+4. In a separate terminal, create `garzon-client/.env`:
 
-This separation keeps transport and session logic out of most visual components while allowing pages to focus on screen-specific state and behavior.
+   ```dotenv
+   VITE_API_URL=http://localhost:5000/api/v1
+   ```
 
-### Server Design Pattern
+5. Start the frontend:
 
-The server uses an **MVC-inspired layered architecture** with an Express middleware pipeline:
+   ```bash
+   cd garzon-client
+   npm install
+   npm run dev
+   ```
 
-- **Routes** define HTTP methods and URLs, then compose the middleware and controller required for each endpoint.
-- **Middleware** handles cross-cutting concerns such as JWT authentication, role authorization, ObjectId validation, file uploads, 404 handling, and structured errors.
-- **Controllers** implement use-case and request-handling logic, whitelist accepted fields, call the data layer, and serialize HTTP responses.
-- **Models** act as the data layer by defining Mongoose schemas, validation, relationships, hooks, collection names, and indexes.
-- **Configuration modules** centralize environment parsing, database connection setup, roles, order states, and HTTP status constants.
-- **Utility modules** provide focused reusable functions for tokens, query parsing, field selection, and slug creation.
+Open `http://localhost:5173`. Check `http://localhost:5000/api/v1/health` for backend health.
 
-Controllers are wrapped by `asyncHandler`, which forwards rejected promises into a centralized error handler. This keeps error responses consistent and prevents route handlers from duplicating `try/catch` response logic. Authentication and role checks are composed before protected controllers, following the middleware/chain-of-responsibility pattern.
+**Security:** Never commit `.env` files or secrets. Use dedicated disposable demo accounts if providing public access.
 
-## API Route Groups
+## Deployment
 
-- `/api/v1/users` - registration, login, logout, session lookup, profiles, and user management
-- `/api/v1/categories` - catalog categories
-- `/api/v1/products` - public catalog and admin product management
-- `/api/v1/carts` - authenticated customer cart operations
-- `/api/v1/orders` - customer checkout/history and admin order processing
-- `/api/v1/reviews` - product reviews and admin moderation
-- `/api/v1/health` - API health check
+Production uses two Vercel projects from this repository (`garzon-client` for the frontend, `garzon-server` for the backend), MongoDB Atlas, and Cloudinary for product uploads. See [DEPLOYMENT.md](DEPLOYMENT.md) for setup, environment variables, and verification.
 
-## Fork and Clone Instructions
+## Project background and attribution
 
-Fork the original repository on GitHub, then clone the fork:
+Built for an Advanced Web Programming course. The course instructor provided the initial **frontend starter template**; I extended it into the full-stack application and deployed it. Original contributor history remains intact.
 
-```bash
-git clone <forked-repository-url>
-cd surname-long-exam
-```
+## Disclaimer
 
-## Project Setup
-
-The client and server have separate dependencies and must be installed independently.
-
-### 1. Configure and run the server
-
-Create `garzon-server/.env` without committing it:
-
-```dotenv
-NODE_ENV=development
-PORT=5000
-MONGO_URI=mongodb://127.0.0.1:27017/bulldogs_exchange
-CLIENT_ORIGIN=http://localhost:5173
-JWT_SECRET=replace-with-a-long-random-secret
-JWT_EXPIRES_IN=8h
-```
-
-Then install and start the server:
-
-```bash
-cd garzon-server
-npm install
-npm run dev
-```
-
-Verify the server at `http://localhost:5000/api/v1/health`.
-
-### 2. Configure and run the client
-
-In a second terminal, create `garzon-client/.env`:
-
-```dotenv
-VITE_API_URL=http://localhost:5000/api/v1
-```
-
-Then install and start the client:
-
-```bash
-cd garzon-client
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173`. The URL and port must match the server's `CLIENT_ORIGIN` value. If either application is deployed elsewhere, update both environment variables accordingly.
-
-### Other Commands
-
-Run these commands from `garzon-client`:
-
-```bash
-npm run build
-npm run lint
-npm run preview
-```
-
-## Client Routes
-
-- `/` - home page
-- `/about` - store information
-- `/products` - searchable product catalog
-- `/products/:id` - product details and reviews
-- `/auth/signin` - sign-in page
-- `/auth/signup` - registration page
-- `/profile` - authenticated profile and password management
-- `/cart` - customer cart
-- `/orders` - customer order tracking
-- `/admin` - admin dashboard
-- `/admin/products` - admin product management
-- `/admin/orders` - admin order processing
-- `/admin/reviews` - admin review moderation
-- `/admin/users` - admin account management
-
-## Project File Outline
-
-Generated folders such as `node_modules` and `dist`, local environment files, and individual image assets are omitted for clarity.
-
-```text
-garzon-webprog-longexam/
-|-- README.md                         # Full-project documentation
-|-- .gitignore
-|-- garzon-client/                    # Browser presentation application
-|   |-- package.json                  # Client dependencies and scripts
-|   |-- vite.config.js                # React and Tailwind Vite plugins
-|   |-- index.html                    # Browser entry document
-|   |-- public/
-|   |   |-- products/                 # Static catalog images
-|   |   |-- favicon.svg
-|   |   `-- icons.svg
-|   `-- src/
-|       |-- main.jsx                  # React root and AuthProvider setup
-|       |-- App.jsx                   # Route tree and Toaster setup
-|       |-- api/
-|       |   `-- apiClient.js          # Central Fetch/JWT service layer
-|       |-- auth/
-|       |   |-- AuthProvider.jsx      # Global authentication state/actions
-|       |   |-- authContext.js        # Context and useAuth access
-|       |   `-- RouteGuards.jsx       # Protected and role-based outlets
-|       |-- components/               # Reusable presentation components
-|       |   |-- Footer.jsx
-|       |   |-- NavBar.jsx
-|       |   `-- StoreUI.jsx
-|       |-- layouts/                  # Shared route shells
-|       |   |-- Layout.jsx
-|       |   |-- AuthLayout.jsx
-|       |   `-- AdminLayout.jsx
-|       |-- pages/                    # Route-level screens
-|       |   |-- LandingPages/         # Home, about, catalog, product detail
-|       |   |-- AuthPages/            # Sign-in and sign-up
-|       |   |-- Customer/             # Cart, orders, and profile
-|       |   |-- Admin/                # Dashboard and management console
-|       |   `-- NotFoundPage.jsx
-|       |-- assets/                   # Images and global CSS
-|       `-- utils/
-|           |-- toast.js              # Shared notification helpers
-|           `-- validation.js         # Client input validation
-`-- garzon-server/                    # REST API and persistence application
-    |-- package.json                  # Server dependencies and scripts
-    |-- index.js                      # Database/index readiness and HTTP startup
-    |-- app.js                        # Express middleware and route composition
-    |-- config/
-    |   |-- config.js                 # Validated environment configuration
-    |   |-- constants.js              # Status, role, and order constants
-    |   `-- db.js                     # MongoDB connection
-    |-- routes/                       # Endpoint and middleware composition
-    |   |-- cartRoutes.js
-    |   |-- categoryRoutes.js
-    |   |-- orderRoutes.js
-    |   |-- productRoutes.js
-    |   |-- reviewRoutes.js
-    |   `-- userRoutes.js
-    |-- controllers/                  # Request/use-case handlers
-    |   |-- cartController.js
-    |   |-- categoryController.js
-    |   |-- orderController.js
-    |   |-- productController.js
-    |   |-- reviewController.js
-    |   `-- userController.js
-    |-- middleware/                   # Authentication, authorization, validation, and errors
-    |   |-- auditLoggerMiddleware.js   # Persistent request/response audit records
-    |   |-- rateLimiterMiddleware.js   # IP quotas and account login cooldowns
-    |   |-- authentication.js
-    |   |-- authorization.js
-    |   |-- errorHandlers.js
-    |   |-- validationMiddleware.js    # API request validation before controllers
-    |   `-- validateObjectId.js
-    |-- models/                       # Mongoose data models and indexes
-    |   |-- logModel.js                # Completed request audit records
-    |   |-- cartModel.js
-    |   |-- categoryModel.js
-    |   |-- orderModel.js
-    |   |-- productModel.js
-    |   |-- reviewModel.js
-    |   `-- userModel.js
-    |-- utils/                        # Query, token, slug, and field helpers
-    |   |-- query.js
-    |   |-- selectFields.js
-    |   |-- slugify.js
-    |   |-- token.js
-    |   `-- validation.js             # Authoritative API input validation
-    `-- uploads/                      # Server-managed product images
-```
+BulldogEx is an academic portfolio demonstration, **not an official university commerce service**. Dashboard statistics are sample values. University marks and merchandise imagery are shown in an academic context and do not imply endorsement.
