@@ -30,9 +30,6 @@ This began as an **Advanced Web Programming academic project** using an instruct
 
 ## Screenshots
 
-Screenshots of the storefront, catalog, cart, order tracking, dashboard, product management, and sign-in experience are prepared for this portfolio. They will appear here after the image assets are added to `assets/screenshots/`.
-
-<!-- Uncomment after uploading the corresponding image files to assets/screenshots/.
 ![BulldogEx Shop storefront](assets/screenshots/storefront.png)
 
 | Product catalog | Cart and order summary |
@@ -46,7 +43,6 @@ Screenshots of the storefront, catalog, cart, order tracking, dashboard, product
 | ![Admin dashboard](assets/screenshots/admin-dashboard.png) | ![Admin products](assets/screenshots/admin-products.png) |
 
 ![Sign-in page](assets/screenshots/login.png)
--->
 
 ## Technology stack
 
